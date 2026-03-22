@@ -1,0 +1,30 @@
+# ── Core UI ──
+streamlit==1.45.1
+
+# ── Data ──
+finmind==1.6.11
+yfinance==0.2.54
+pandas==2.2.3
+numpy==1.26.4
+pyarrow==16.1.0
+
+# ── ML ──
+xgboost==2.1.4
+scikit-learn==1.5.2
+
+# ── AI ──
+google-generativeai==0.8.5
+
+# ── Charts ──
+plotly==5.24.1
+
+# ── Web scraping ──
+requests==2.32.3
+beautifulsoup4==4.12.3
+urllib3==2.3.0
+
+# ── Utilities ──
+pytz==2025.2
+
+# ── Optional: uncomment when vectorbt is needed ──
+# vectorbt==0.26.3
