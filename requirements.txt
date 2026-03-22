@@ -2,7 +2,7 @@
 streamlit==1.45.1
 
 # ── Data ──
-finmind==1.6.11
+finmind==1.9.6
 yfinance==0.2.54
 pandas==2.2.3
 numpy==1.26.4
