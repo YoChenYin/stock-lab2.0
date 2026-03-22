@@ -63,9 +63,9 @@ def render(
     m1.metric(
         "技術門檻",
         f"PR {tech_score['tech_pr']}",
-        help=f"R&D強度：{tech_score['notes'].get('rd_intensity_pct','—')}%  |  "
-             f"毛利：{tech_score['notes'].get('latest_margin','—')}%  |  "
-             f"穩定性：σ={tech_score['notes'].get('margin_std','—')}%"
+        help=f"R&D強度：{tech_score.get('notes',{}).get('rd_intensity_pct','—')}%  |  "
+            f"毛利：{tech_score.get('notes',{}).get('latest_margin','—')}%  |  "
+            f"穩定性：σ={tech_score.get('notes',{}).get('margin_std','—')}%"
     )
     st.caption(tech_score["label"]) if hasattr(m1, "caption") else None
     with m1:

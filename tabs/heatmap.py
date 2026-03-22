@@ -15,21 +15,25 @@ def _get_heatmap_data(_engine, sector_map):
         strengths, stock_list = [], []
         for sid in stocks:
             df, _ = _engine.fetch_data(sid)
-            if not df.empty and len(df) >= 5:
-                f_sum = df["f_net"].tail(5).sum()
-                it_sum = df["it_net"].tail(5).sum()
-                v_sum  = df["trading_volume"].tail(5).sum()
-                strength = (f_sum + it_sum) / v_sum * 100
-                strengths.append(strength)
-                change = ((df["close"].iloc[-1] - df["close"].iloc[-5]) / df["close"].iloc[-5]) * 100
-                stock_list.append({
-                    "代號": sid, "名稱": STOCK_POOL.get(sid, sid),
-                    "現價": round(df["close"].iloc[-1], 2),
-                    "漲跌幅": round(change, 2),
-                    "外資(張)": int(f_sum / 1000),
-                    "投信(張)": int(it_sum / 1000),
-                    "融資":     int(df["m_net"].tail(5).sum()) if "m_net" in df.columns else 0,
-                })
+            if df.empty:
+                continue
+            if len(df) < 5:      
+                continue
+            
+            f_sum = df["f_net"].tail(5).sum()
+            it_sum = df["it_net"].tail(5).sum()
+            v_sum  = df["trading_volume"].tail(5).sum()
+            strength = (f_sum + it_sum) / v_sum * 100
+            strengths.append(strength)
+            change = ((df["close"].iloc[-1] - df["close"].iloc[-5]) / df["close"].iloc[-5]) * 100
+            stock_list.append({
+                "代號": sid, "名稱": STOCK_POOL.get(sid, sid),
+                "現價": round(df["close"].iloc[-1], 2),
+                "漲跌幅": round(change, 2),
+                "外資(張)": int(f_sum / 1000),
+                "投信(張)": int(it_sum / 1000),
+                "融資":     int(df["m_net"].tail(5).sum()) if "m_net" in df.columns else 0,
+            })
         if strengths:
             heatmap_data.append({"族群": sector, "平均強度": np.mean(strengths)})
             sector_details[sector] = stock_list
