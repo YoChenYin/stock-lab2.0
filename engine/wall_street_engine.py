@@ -72,8 +72,8 @@ class WallStreetEngine:
     def __init__(self, fm_token: str = "", gemini_key: str = ""):
         self.dl        = DataLoader()
         self.cache     = DataCacheManager()
-        self.fm_token  = fm_token  or st.secrets.get("FINMIND_TOKEN", "")
-        self.api_key   = gemini_key or st.secrets.get("GEMINI_API_KEY", "")
+        self.fm_token  = fm_token  or os.environ.get("FINMIND_TOKEN", "") or st.secrets.get("FINMIND_TOKEN", "")
+        self.api_key   = gemini_key or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
         self.ai_model  = None
 
         if self.fm_token:
