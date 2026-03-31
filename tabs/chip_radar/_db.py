@@ -22,13 +22,79 @@ COMPOSITE_KEY = {
 
 
 def _init_db():
-    """建立所有 tables（冪等），不依賴 package import。"""
-    import importlib.util
-    schema_path = Path(__file__).resolve().parents[2] / "chip_module" / "db" / "schema.py"
-    spec = importlib.util.spec_from_file_location("chip_schema", schema_path)
-    mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    mod.init_db(CHIP_DB)
+    """建立所有 tables（冪等）。"""
+    with sqlite3.connect(CHIP_DB) as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS daily_prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, date TEXT NOT NULL,
+            open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+            obv REAL, obv_signal REAL, cmf_20 REAL, mfi_14 REAL,
+            avg_vol_20 REAL, vol_ratio REAL,
+            UNIQUE(ticker, date)
+        );
+        CREATE TABLE IF NOT EXISTS insider_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, report_date TEXT NOT NULL, trade_date TEXT,
+            insider_name TEXT, insider_title TEXT, transaction_type TEXT,
+            shares REAL, price_per_share REAL, total_value REAL,
+            shares_owned_after REAL, accession_number TEXT UNIQUE,
+            fetched_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS short_interest (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, settlement_date TEXT NOT NULL,
+            short_volume INTEGER, avg_daily_vol REAL, short_float_pct REAL,
+            days_to_cover REAL, prev_short_vol INTEGER, chg_pct REAL,
+            UNIQUE(ticker, settlement_date)
+        );
+        CREATE TABLE IF NOT EXISTS options_sentiment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL, scope TEXT NOT NULL,
+            pc_ratio REAL, pc_ma10 REAL, pc_ma20 REAL, pc_zscore_20 REAL,
+            UNIQUE(date, scope)
+        );
+        CREATE TABLE IF NOT EXISTS institutional_holders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, report_date TEXT NOT NULL,
+            institution TEXT, shares_held REAL, pct_out REAL,
+            value_usd REAL, prev_shares REAL, chg_pct REAL,
+            UNIQUE(ticker, report_date, institution)
+        );
+        CREATE TABLE IF NOT EXISTS options_flow (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, date TEXT NOT NULL,
+            underlying_price REAL,
+            call_volume INTEGER, call_oi INTEGER,
+            put_volume INTEGER, put_oi INTEGER,
+            otm_call_volume INTEGER, otm_call_oi INTEGER,
+            unusual_call_strikes INTEGER, unusual_put_strikes INTEGER,
+            max_call_vol_oi_ratio REAL, max_put_vol_oi_ratio REAL,
+            avg_call_iv REAL, avg_put_iv REAL,
+            UNIQUE(ticker, date)
+        );
+        CREATE TABLE IF NOT EXISTS large_holders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, filed_date TEXT NOT NULL,
+            form_type TEXT, filer_name TEXT, accession_number TEXT UNIQUE,
+            UNIQUE(ticker, filed_date, filer_name)
+        );
+        CREATE TABLE IF NOT EXISTS chip_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, date TEXT NOT NULL,
+            insider_score REAL, short_score REAL, volume_score REAL,
+            options_flow_score REAL, options_mkt_score REAL, institutional_score REAL,
+            composite_short REAL, composite_swing REAL, composite_mid REAL,
+            whale_alert INTEGER DEFAULT 0, entry_timing INTEGER DEFAULT 0,
+            signal_flags TEXT, calc_version TEXT DEFAULT '2.0',
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(ticker, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_prices_ticker_date  ON daily_prices(ticker, date DESC);
+        CREATE INDEX IF NOT EXISTS idx_scores_ticker_date  ON chip_scores(ticker, date DESC);
+        CREATE INDEX IF NOT EXISTS idx_scores_composite    ON chip_scores(date DESC, composite_swing DESC);
+        CREATE INDEX IF NOT EXISTS idx_scores_whale        ON chip_scores(date DESC, whale_alert DESC);
+        """)
 
 
 def get_conn() -> sqlite3.Connection:
