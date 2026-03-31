@@ -22,6 +22,10 @@ COMPOSITE_KEY = {
 
 
 def get_conn() -> sqlite3.Connection:
+    import sys
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
     from chip_module.db.schema import init_db
     init_db(CHIP_DB)
     conn = sqlite3.connect(CHIP_DB)
