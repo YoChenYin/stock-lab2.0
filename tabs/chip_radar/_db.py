@@ -4,8 +4,6 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 from pathlib import Path
-from chip_module.db.schema import init_db
-
 CHIP_DB        = Path(__file__).resolve().parents[2] / "chip_module" / "chip.db"
 UNIVERSE_JSON  = Path(__file__).resolve().parents[2] / "chip_module" / "us_universe.json"
 
@@ -24,6 +22,7 @@ COMPOSITE_KEY = {
 
 
 def get_conn() -> sqlite3.Connection:
+    from chip_module.db.schema import init_db
     init_db(CHIP_DB)
     conn = sqlite3.connect(CHIP_DB)
     conn.row_factory = sqlite3.Row
