@@ -21,6 +21,7 @@ DuckDB long-term storage:
 """
 
 import datetime
+import os
 import sqlite3
 import time
 import pytz
@@ -32,7 +33,9 @@ from pathlib import Path
 TAIPEI_TZ       = pytz.timezone("Asia/Taipei")
 MARKET_CLOSE_H  = 14
 MARKET_CLOSE_M  = 30
-CACHE_DB_PATH   = Path("finmind_cache.db")
+# 與 cache.py 保持一致：有掛 /data volume 就用 /data/finmind_cache.db
+_DATA_DIR     = "/data" if os.path.isdir("/data") else "."
+CACHE_DB_PATH = Path(_DATA_DIR) / "finmind_cache.db"
 LAST_REFRESH_KEY = "last_scheduled_refresh"
 
 
