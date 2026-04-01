@@ -66,6 +66,14 @@ with st.sidebar:
 
     if market == "台股":
         nav = st.radio("功能", ["📖 使用指南", "📋 持倉追蹤", "1. 選股", "2. 族群資金熱圖", "3. 個股"])
+        st.divider()
+        if st.button("🔄 強制更新台股資料", use_container_width=True,
+                     help="清除 SQLite cache，下次載入重新從 FinMind 抓取最新資料"):
+            from engine.scheduler import _clear_today_cache, mark_refreshed
+            _clear_today_cache()
+            mark_refreshed()
+            st.cache_data.clear()
+            st.success("Cache 已清除，請重新切換頁面載入最新資料。")
     else:
         nav = st.radio(
             "功能",
