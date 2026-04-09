@@ -26,5 +26,6 @@ urllib3==2.3.0
 # ── Utilities ──
 pytz==2025.2
 matplotlib==3.9.4
+schedule==1.2.2
 # ── Optional: uncomment when vectorbt is needed ──
 # vectorbt==0.26.3

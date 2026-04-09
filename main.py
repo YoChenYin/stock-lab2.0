@@ -17,7 +17,10 @@ from engine.wall_street_engine import WallStreetEngine
 from engine.smart_money import calc_smart_money_score, calc_revenue_accel_score
 from engine.rocket_detector import detect_coiling
 from engine.scheduler import show_staleness_banner
+from engine.background import start_scheduler
 from sector_data import STOCK_POOL, SECTOR_GROUPS
+
+start_scheduler()
 
 import tabs.screener   as screener_page
 import tabs.heatmap    as heatmap_page

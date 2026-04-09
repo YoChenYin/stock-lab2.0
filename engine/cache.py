@@ -65,6 +65,15 @@ class DataCacheManager:
                 (sid, data_type, today, df.to_json())
             )
 
+    def invalidate(self, sid: str, data_type: str):
+        """Delete today's cache entry for a specific sid+data_type, forcing a re-fetch."""
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "DELETE FROM api_cache WHERE sid=? AND data_type=? AND fetch_date=?",
+                (sid, data_type, today)
+            )
+
     def clear_old(self, keep_days: int = 3):
         """Housekeeping: remove entries older than keep_days."""
         cutoff = (datetime.date.today() - datetime.timedelta(days=keep_days)).strftime("%Y-%m-%d")
