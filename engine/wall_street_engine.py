@@ -2,13 +2,13 @@
 engine/wall_street_engine.py — WallStreetEngine
 
 Responsibilities:
-  - All FinMind API calls (via _smart_fetch → SQLite cache → @st.cache_data)
+  - All FinMind API calls (via _smart_fetch → SQLite cache)
   - Real chip data: compute foreign ownership % from actual holdings data
   - All Gemini AI calls (interpretation only, never data invention)
   - MOPS scraper
 
 Design rules:
-  - _self pattern for @st.cache_data on instance methods
+  - _self pattern on instance methods (legacy Streamlit convention, kept for clarity)
   - _smart_fetch is the ONLY entry point to FinMind API
   - Gemini receives real numbers; it interprets, not invents
 """
@@ -341,7 +341,6 @@ class WallStreetEngine:
     # AI CALLERS  (Gemini interprets real data, never invents)
     # ─────────────────────────────────────────────────────
 
-    @st.cache_data(ttl=43200)  # 12小時，避免每次重整都打 Gemini API
     def get_ai_dashboard_data(_self, sid: str, name: str,
                                df: pd.DataFrame, rev: pd.DataFrame,
                                real_chip: dict | None = None) -> dict | None:
