@@ -1,9 +1,0 @@
-# 加進你的 zeabur.yaml
-# 每天台灣時間 23:30（UTC 15:30）執行
-services:
-  chip-daily-fetch:
-    type: cron
-    schedule: "30 15 * * 1-5"   # 週一到週五
-    command: "python -m chip_module.fetch_daily"
-    env:
-      - PYTHONPATH=/app

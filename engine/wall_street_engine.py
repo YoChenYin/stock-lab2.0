@@ -13,7 +13,6 @@ Design rules:
   - Gemini receives real numbers; it interprets, not invents
 """
 
-import streamlit as st
 import pandas as pd
 import numpy as np
 import datetime
@@ -76,22 +75,22 @@ class WallStreetEngine:
     def __init__(self, fm_token: str = "", gemini_key: str = ""):
         self.dl        = DataLoader()
         self.cache     = DataCacheManager()
-        self.fm_token  = fm_token  or os.environ.get("FINMIND_TOKEN", "") or st.secrets.get("FINMIND_TOKEN", "")
-        self.api_key   = gemini_key or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+        self.fm_token  = fm_token  or os.environ.get("FINMIND_TOKEN", "")
+        self.api_key   = gemini_key or os.environ.get("GEMINI_API_KEY", "")
         self.ai_model  = None
 
         if self.fm_token:
             try:
                 self.dl.login_by_token(api_token=self.fm_token)
             except Exception:
-                st.error("FinMind login failed — check FINMIND_TOKEN.")
+                print("FinMind login failed — check FINMIND_TOKEN.")
 
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
                 self.ai_model = genai.GenerativeModel("gemini-2.5-flash-lite")
             except Exception as e:
-                st.error(f"Gemini config error: {e}")
+                print(f"Gemini config error: {e}")
 
     # ── internal fetch (cache-first) ──────────────────────
     def _smart_fetch(self, sid: str, data_type: str, fetch_func, **kwargs) -> pd.DataFrame:
@@ -114,7 +113,6 @@ class WallStreetEngine:
     # DATA FETCHERS
     # ─────────────────────────────────────────────────────
 
-    @st.cache_data(ttl=3600)
     def fetch_data(_self, sid: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Returns (df_daily_with_institutional, df_revenue)."""
         start = (datetime.date.today() - datetime.timedelta(days=730)).strftime("%Y-%m-%d")
@@ -150,7 +148,6 @@ class WallStreetEngine:
         df["ma20"] = df["close"].rolling(20).mean()
         return df, rev
 
-    @st.cache_data(ttl=3600)
     def fetch_ml_ready_data(_self, sid: str) -> pd.DataFrame:
         """10-year OHLCV + institutional + margin + computed features for ML/backtest."""
         start = (datetime.date.today() - datetime.timedelta(days=3650)).strftime("%Y-%m-%d")
@@ -207,10 +204,9 @@ class WallStreetEngine:
 
             return df.dropna(subset=["ma20", "bias_f_cost"])
         except Exception as e:
-            st.error(f"ML data error: {e}")
+            print(f"ML data error: {e}")
             return pd.DataFrame()
 
-    @st.cache_data(ttl=86400)
     def fetch_quarterly_financials(_self, sid: str) -> pd.DataFrame:
         start = (datetime.date.today() - datetime.timedelta(days=3650)).strftime("%Y-%m-%d")
         try:
@@ -241,10 +237,9 @@ class WallStreetEngine:
 
             return df_q.dropna(subset=["EPS"]).tail(12)
         except Exception as e:
-            st.error(f"Financial parse error: {e}")
+            print(f"Financial parse error: {e}")
             return pd.DataFrame()
 
-    @st.cache_data(ttl=86400)
     def fetch_real_chip_data(_self, sid: str) -> dict:
         """
         Fetch REAL ownership percentages from FinMind.
@@ -290,7 +285,6 @@ class WallStreetEngine:
             pass
         return {"foreign_pct": None, "major_pct": None, "source": "unavailable"}
 
-    @st.cache_data(ttl=3600)
     def fetch_detailed_sentiment(_self, sid: str) -> pd.DataFrame:
         start = (datetime.date.today() - datetime.timedelta(days=120)).strftime("%Y-%m-%d")
         try:
@@ -316,10 +310,9 @@ class WallStreetEngine:
                 columns={"MarginPurchaseTodayBalance": "retail_margin"})
             return out.reset_index().merge(margin, on="date", how="inner")
         except Exception as e:
-            st.error(f"Sentiment error: {e}")
+            print(f"Sentiment error: {e}")
             return pd.DataFrame()
 
-    @st.cache_data(ttl=3600)
     def fetch_broker_tracking(_self, sid: str) -> list:
         start = (datetime.date.today() - datetime.timedelta(days=120)).strftime("%Y-%m-%d")
         try:
@@ -348,7 +341,6 @@ class WallStreetEngine:
     # AI CALLERS  (Gemini interprets real data, never invents)
     # ─────────────────────────────────────────────────────
 
-    @st.cache_data(ttl=3600)
     @st.cache_data(ttl=43200)  # 12小時，避免每次重整都打 Gemini API
     def get_ai_dashboard_data(_self, sid: str, name: str,
                                df: pd.DataFrame, rev: pd.DataFrame,
@@ -421,7 +413,6 @@ class WallStreetEngine:
 """
         return _call_gemini(_self.ai_model, prompt)
 
-    @st.cache_data(ttl=86400)
     def get_real_world_outlook(_self, sid: str, name: str,
                                 mops_data: dict, _content_hash: str = "") -> dict | None:
         """
@@ -498,7 +489,6 @@ class WallStreetEngine:
             }
         return data
 
-    @st.cache_data(ttl=3600)
     def get_strategy_card_ai(
         _self, sid: str, name: str,
         curr_price: float, low52: float, high52: float,
