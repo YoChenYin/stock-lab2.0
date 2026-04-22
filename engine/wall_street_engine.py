@@ -4,26 +4,21 @@ engine/wall_street_engine.py — WallStreetEngine
 Responsibilities:
   - All FinMind API calls (via _smart_fetch → SQLite cache)
   - Real chip data: compute foreign ownership % from actual holdings data
-  - All Gemini AI calls (interpretation only, never data invention)
   - MOPS scraper
 
 Design rules:
   - _self pattern on instance methods (legacy Streamlit convention, kept for clarity)
   - _smart_fetch is the ONLY entry point to FinMind API
-  - Gemini receives real numbers; it interprets, not invents
 """
 
 import pandas as pd
 import numpy as np
 import datetime
 import time
-import json
-import re
 import os
 import requests
 import urllib3
 from FinMind.data import DataLoader
-import google.generativeai as genai
 from bs4 import BeautifulSoup
 
 from engine.cache import DataCacheManager
@@ -32,65 +27,19 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # ─────────────────────────────────────────────────────────
-# Gemini helper — used by all AI methods below
-# ─────────────────────────────────────────────────────────
-def _call_gemini(model, prompt: str, fallback: dict | None = None,
-                  generation_config: dict | None = None) -> dict:
-    """
-    Unified Gemini caller with JSON extraction fallback.
-    Always returns a dict (never raises).
-
-    generation_config overrides the default JSON-only config.
-    Pass temperature=0.0, top_p=0.1, top_k=1 for deterministic output.
-    """
-    if fallback is None:
-        fallback = {}
-    base_config = {"response_mime_type": "application/json"}
-    if generation_config:
-        base_config.update(generation_config)
-    try:
-        res = model.generate_content(prompt, generation_config=base_config)
-        raw = res.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", res.text, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group())
-            except Exception:
-                pass
-        return fallback
-    except Exception as e:
-        print(f"[Gemini error] {type(e).__name__}: {e}")
-        if fallback == {}:
-            # 把錯誤存進 fallback 讓 UI 可以顯示
-            return {"_error": str(e)}
-        return fallback
-
-
-# ─────────────────────────────────────────────────────────
 # Engine
 # ─────────────────────────────────────────────────────────
 class WallStreetEngine:
-    def __init__(self, fm_token: str = "", gemini_key: str = ""):
-        self.dl        = DataLoader()
-        self.cache     = DataCacheManager()
-        self.fm_token  = fm_token  or os.environ.get("FINMIND_TOKEN", "")
-        self.api_key   = gemini_key or os.environ.get("GEMINI_API_KEY", "")
-        self.ai_model  = None
+    def __init__(self, fm_token: str = ""):
+        self.dl       = DataLoader()
+        self.cache    = DataCacheManager()
+        self.fm_token = fm_token or os.environ.get("FINMIND_TOKEN", "")
 
         if self.fm_token:
             try:
                 self.dl.login_by_token(api_token=self.fm_token)
             except Exception:
                 print("FinMind login failed — check FINMIND_TOKEN.")
-
-        if self.api_key:
-            try:
-                genai.configure(api_key=self.api_key)
-                self.ai_model = genai.GenerativeModel("gemini-2.5-flash-lite")
-            except Exception as e:
-                print(f"Gemini config error: {e}")
 
     # ── internal fetch (cache-first) ──────────────────────
     def _smart_fetch(self, sid: str, data_type: str, fetch_func, **kwargs) -> pd.DataFrame:
@@ -336,214 +285,6 @@ class WallStreetEngine:
             return insights
         except Exception:
             return []
-
-    # ─────────────────────────────────────────────────────
-    # AI CALLERS  (Gemini interprets real data, never invents)
-    # ─────────────────────────────────────────────────────
-
-    def get_ai_dashboard_data(_self, sid: str, name: str,
-                               df: pd.DataFrame, rev: pd.DataFrame,
-                               real_chip: dict | None = None) -> dict | None:
-        """
-        AI overview analysis.
-        real_chip is fetched separately and passed in — Gemini does NOT invent chip numbers.
-        """
-        if not _self.ai_model or df.empty:
-            return None
-
-        price_stats = {
-            "current": round(df["close"].iloc[-1], 1),
-            "low_52":  round(df["close"].tail(252).min(), 1),
-            "high_52": round(df["close"].tail(252).max(), 1),
-            "ma20":    round(df["ma20"].iloc[-1], 1),
-        }
-        # Use real chip data when available
-        chip_context = ""
-        if real_chip and real_chip.get("source") != "unavailable":
-            chip_context = f"""
-真實持股數據（來源：{real_chip['source']}）：
-- 外資持股比例：{real_chip.get('foreign_pct', 'N/A')}%
-- 前十大股東持股：{real_chip.get('major_pct', 'N/A')}%
-請在 chips 欄位直接使用這些數字，不要另行估計。"""
-        else:
-            chip_context = "真實持股數據暫不可用，請在 chips 欄位標記 '資料獲取中'。"
-
-        rev_data = rev.tail(6).to_dict(orient="records") if not rev.empty else []
-
-        prompt = f"""
-你是一位專業的證券分析師。現在是 {datetime.date.today()}。
-請針對台股 {sid} {name} 進行深度分析。
-
-價格資訊：{price_stats}
-近期營收：{rev_data}
-{chip_context}
-
-請嚴格依照以下 JSON 格式，不要有任何解釋文字：
-{{
-  "header": {{"category": "產業類別"}},
-  "overview": {{
-    "business_model": "簡述如何賺錢、核心產品（50字內）",
-    "moat_metrics": {{
-      "mkt_share": "市佔率估計（請標明：AI估計）",
-      "tech_pr": 技術門檻PR整數0到100,
-      "rd_intensity": "高/中/低",
-      "barrier_desc": "技術門檻一句話總結",
-      "moat": "競爭優勢分析（60字內）"
-    }},
-    "competitor_diff": "與同業主要優勢（30字內）"
-  }},
-  "diagnosis": {{
-    "margin_trend": "毛利率變動看法",
-    "growth_status": "營收成長動能與發展性",
-    "leader_score": 領頭羊指數整數0到100
-  }},
-  "chips": {{
-    "foreign_inst": "見上方真實持股數據",
-    "major_holder": "見上方真實持股數據",
-    "comment": "籌碼面解讀（30字內）"
-  }},
-  "valuation": {{
-    "level_pct": 根據當前價{price_stats['current']}在{price_stats['low_52']}到{price_stats['high_52']}之間計算0到100的整數,
-    "conclusion": "估值評價與建議",
-    "opportunities": ["利多1", "利多2"],
-    "risks": ["利空1", "利空2"]
-  }}
-}}
-"""
-        return _call_gemini(_self.ai_model, prompt)
-
-    def get_real_world_outlook(_self, sid: str, name: str,
-                                mops_data: dict, _content_hash: str = "") -> dict | None:
-        """
-        Analyse the latest investor relations meeting.
-
-        _content_hash is derived from mops_data['event'] text — it ensures
-        the cache key changes only when the actual MOPS content changes,
-        not just because the date ticked over. Same document = same result.
-
-        temperature=0 is set via top_k/top_p constraints to minimise
-        Gemini output variability for identical input text.
-        """
-        if not _self.ai_model:
-            return None
-
-        event_text = mops_data.get("event", "").strip()
-        pdf_url    = mops_data.get("url", "")
-        mops_date  = mops_data.get("date", "未知日期")
-
-        # Warn in prompt when event text is sparse (< 50 chars = basically empty)
-        if len(event_text) < 50:
-            honesty_note = """
-【重要】法說摘要文字非常短，代表 MOPS 公開資訊有限。
-請根據有限資訊如實回答，不足之處請標示「摘要不足，無法確認」，
-絕對不要根據公司過去的印象或推測來補充數字。"""
-        else:
-            honesty_note = "請嚴格根據上方摘要文字回答，不要超出摘要範圍推論數字。"
-
-        prompt = f"""你是資深賣方分析師。現在是 {datetime.date.today()}。
-請針對台股 {sid} {name} 的法說會資料進行分析。
-
-【法說日期】{mops_date}
-【MOPS 官方摘要原文（這是唯一可信來源）】
-{event_text}
-【官方簡報連結】{pdf_url}
-
-{honesty_note}
-
-請嚴格回傳 JSON，不要有多餘解釋：
-{{
-  "data_quality": "sufficient（摘要足夠）或 limited（摘要不足）",
-  "scorecard": {{
-    "rev_status": "營收目標（摘要有提到才填，否則填：摘要未提及）",
-    "margin_status": "毛利表現（摘要有提到才填，否則填：摘要未提及）",
-    "guidance_tone": "展望基調（根據摘要措辭判斷）",
-    "alpha_factor": "法說最值得關注的一點（限摘要內容）"
-  }},
-  "guidance_detail": {{
-    "revenue": "具體營收指引（摘要無則：摘要未提及）",
-    "margin": "具體毛利指引（摘要無則：摘要未提及）",
-    "capex": "資本支出/擴產計畫（摘要無則：摘要未提及）"
-  }},
-  "growth_drivers": ["動能1（限摘要內容）", "動能2", "動能3"],
-  "analyst_concerns": ["法人質疑點1（限摘要內容）", "法人質疑點2"],
-  "valuation_anchor": "估值邏輯（僅限摘要有提到的業績指引，否則填：需閱讀完整簡報）",
-  "radar": [訂單強度整數, 獲利能力整數, 產業地位整數, 技術優勢整數, 財務穩健整數]
-}}
-注意：radar 陣列僅包含 5 個 0-100 的整數。"""
-
-        data = _call_gemini(
-            _self.ai_model, prompt,
-            generation_config={
-                "response_mime_type": "application/json",
-                "temperature": 0.0,       # deterministic output
-                "top_p": 0.1,
-                "top_k": 1,
-            }
-        )
-        if data and "guidance_detail" not in data:
-            data["guidance_detail"] = {
-                "revenue": data.get("scorecard", {}).get("rev_status", "未提供"),
-                "margin":  data.get("scorecard", {}).get("margin_status", "未提供"),
-                "capex":   "詳見官方簡報",
-            }
-        return data
-
-    def get_strategy_card_ai(
-        _self, sid: str, name: str,
-        curr_price: float, low52: float, high52: float,
-        f_cost: float, sms_score: float,
-        mops_event: str, hit_rate: float,
-    ) -> dict | None:
-        """
-        Generate a concrete strategy card.
-        All numbers are real data passed in — Gemini anchors on them, not invents.
-        """
-        if not _self.ai_model:
-            return None
-
-        # Hard safety floor for stop loss
-        min_stop = round(curr_price * 0.92, 1)
-
-        prompt = f"""
-你是一位風控嚴謹的操盤手。現在是 {datetime.date.today()}。
-根據以下【真實數據】輸出一張具體可執行的策略卡。
-
-股票：{sid} {name}
-當前價格：{curr_price:.1f}
-52週低/高：{low52:.1f} / {high52:.1f}
-外資平均成本區：{f_cost:.1f}
-Smart Money Score：{sms_score:.0f}/100
-AI 回測歷史勝率：{hit_rate:.1%}
-最新法說重點：{mops_event[:200] if mops_event else '無'}
-停損不得低於：{min_stop}
-
-請嚴格回傳 JSON，不可有多餘文字：
-{{
-  "strategy_type": "趨勢追蹤|反轉|區間震盪",
-  "entry": {{
-    "ideal_zone": "進場區間如{curr_price*0.97:.0f}-{curr_price:.0f}",
-    "trigger": "進場觸發條件15字內",
-    "timing": "進場時機說明"
-  }},
-  "risk": {{
-    "stop_loss": 停損價數字（不得低於{min_stop}）,
-    "stop_reason": "停損邏輯",
-    "max_loss_pct": 最大虧損百分比數字
-  }},
-  "targets": [
-    {{"price": 目標一數字, "reason": "理由10字內", "action": "減倉50%"}},
-    {{"price": 目標二數字, "reason": "理由10字內", "action": "清倉"}}
-  ],
-  "position_size": {{
-    "kelly_fraction": Kelly分數0到0.25的浮點數,
-    "suggested_pct": "建議佔總資金%字串",
-    "rationale": "部位邏輯"
-  }},
-  "validity": "策略有效期如下季財報前",
-  "confidence": 信心度0到100整數
-}}
-"""
-        return _call_gemini(_self.ai_model, prompt)
 
     def fetch_latest_mops_pdf_info(self, sid: str) -> dict:
         url = "https://mopsov.twse.com.tw/mops/web/ajax_t100sb07_1"
