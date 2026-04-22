@@ -1,0 +1,81 @@
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+  <!-- 法說展望 -->
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-slate-700 text-sm">📋 最新法說會</h3>
+      {% if mops.url and mops.url != '#' %}
+      <a href="{{ mops.url }}" target="_blank"
+         class="text-xs text-primary hover:underline">
+        簡報 PDF ↗
+      </a>
+      {% endif %}
+    </div>
+
+    {% if mops.status == 'empty' %}
+      <p class="text-xs text-slate-400">近期未上傳法說資料</p>
+    {% elif mops.status == 'error' %}
+      <p class="text-xs text-red-400">讀取失敗：{{ mops.event }}</p>
+    {% else %}
+      <div class="text-xs text-slate-400 mb-2">{{ mops.date }}</div>
+      <p class="text-sm text-slate-600 leading-relaxed">
+        {{ mops.event if mops.event else '摘要未提供' }}
+      </p>
+    {% endif %}
+  </div>
+
+  <!-- 策略快覽 -->
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <h3 class="font-semibold text-slate-700 text-sm mb-3">📐 策略快覽</h3>
+    {% if strategy_data %}
+    {% set curr  = strategy_data.curr %}
+    {% set low52 = strategy_data.low52 %}
+    {% set hi52  = strategy_data.hi52 %}
+    {% set f_cost = strategy_data.f_cost %}
+    {% set sms   = strategy_data.sms %}
+
+    <!-- 52週位置 bar -->
+    {% if hi52 > low52 %}
+    {% set pos_pct = ((curr - low52) / (hi52 - low52) * 100) | round(1) %}
+    <div class="mb-4">
+      <div class="flex justify-between text-xs text-slate-400 mb-1">
+        <span>52週低 {{ low52 }}</span>
+        <span class="font-semibold text-slate-700">現價 {{ curr }}</span>
+        <span>52週高 {{ hi52 }}</span>
+      </div>
+      <div class="relative h-2 bg-slate-100 rounded-full">
+        <div class="absolute h-full bg-primary rounded-full"
+             style="width: {{ pos_pct }}%;"></div>
+        <div class="absolute w-2 h-2 bg-primary rounded-full top-0 border-2 border-white shadow"
+             style="left: calc({{ pos_pct }}% - 4px);"></div>
+      </div>
+      <div class="text-right text-xs text-slate-400 mt-1">位於 {{ pos_pct }}% 位置</div>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div class="bg-slate-50 rounded-lg p-3">
+        <div class="text-xs text-slate-400 mb-1">外資均成本</div>
+        <div class="font-bold text-slate-800">{{ f_cost }}</div>
+        {% if f_cost and curr %}
+        {% set gap = ((curr / f_cost - 1) * 100) | round(1) %}
+        <div class="text-xs {% if gap > 0 %}text-up{% else %}text-down{% endif %}">
+          乖離 {% if gap > 0 %}+{% endif %}{{ gap }}%
+        </div>
+        {% endif %}
+      </div>
+      <div class="bg-slate-50 rounded-lg p-3">
+        <div class="text-xs text-slate-400 mb-1">SMS 籌碼分</div>
+        <div class="font-bold text-2xl
+                    {% if sms >= 75 %}text-blue-600{% elif sms >= 50 %}text-green-600{% elif sms >= 25 %}text-yellow-600{% else %}text-red-500{% endif %}">
+          {{ sms | round(0) | int }}
+        </div>
+      </div>
+    </div>
+
+    {% else %}
+    <p class="text-xs text-slate-400">資料不足</p>
+    {% endif %}
+  </div>
+
+</div>

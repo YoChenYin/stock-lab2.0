@@ -1,0 +1,160 @@
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+
+  <!-- 內部人交易 Form 4 -->
+  <div class="bg-white rounded-xl border border-slate-200 p-3">
+    <h4 class="text-xs font-semibold text-slate-600 mb-2">👤 內部人 Form 4</h4>
+    {% if insider_rows %}
+    <div class="space-y-2">
+      {% for r in insider_rows[:5] %}
+      <div class="flex items-start justify-between text-xs gap-2">
+        <div class="min-w-0">
+          <div class="font-semibold text-slate-700 truncate">{{ r.name }}</div>
+          <div class="text-slate-400 truncate">{{ r.title }}</div>
+          <div class="text-slate-400">{{ r.date }}</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="font-bold {% if r.is_buy %}text-green-600{% else %}text-red-500{% endif %}">
+            {% if r.is_buy %}🟢{% else %}🔴{% endif %} {{ r.type }}
+          </div>
+          <div class="text-slate-500">{{ r.shares }} 股</div>
+          <div class="text-slate-500">均價 {{ r.price }}</div>
+        </div>
+      </div>
+      {% if not loop.last %}<div class="border-t border-slate-50"></div>{% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-slate-400">近 90 天無記錄</p>
+    {% endif %}
+  </div>
+
+  <!-- 選擇權流量 -->
+  <div class="bg-white rounded-xl border border-slate-200 p-3">
+    <h4 class="text-xs font-semibold text-slate-600 mb-2">⚙️ 選擇權流量</h4>
+    {% if options_latest %}
+    <div class="space-y-3">
+      <div class="bg-slate-50 rounded-lg p-2 text-center">
+        <div class="text-xs text-slate-400 mb-1">Call / Put 比</div>
+        <div class="text-xl font-bold text-slate-800">{{ options_latest.cp_ratio }}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-center text-xs">
+        <div class="bg-slate-50 rounded-lg p-2">
+          <div class="text-slate-400 mb-1">OTM Call 佔比</div>
+          <div class="font-semibold text-slate-700">{{ options_latest.otm_pct }}</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-2">
+          <div class="text-slate-400 mb-1">異常 Strike 數</div>
+          <div class="font-semibold text-slate-700">{{ options_latest.unusual }}</div>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-xs text-slate-400">資料累積中（至少需 1 天）</p>
+    {% endif %}
+  </div>
+
+  <!-- 大戶持股 13D/13G -->
+  <div class="bg-white rounded-xl border border-slate-200 p-3">
+    <h4 class="text-xs font-semibold text-slate-600 mb-2">🏛️ 大戶持股 13D/13G</h4>
+    {% if holder_rows %}
+    <div class="space-y-2">
+      {% for r in holder_rows[:5] %}
+      <div class="text-xs">
+        <div class="font-semibold text-slate-700 truncate">{{ r.filer }}</div>
+        <div class="text-slate-400">{{ r.form }} · {{ r.date }}</div>
+      </div>
+      {% if not loop.last %}<div class="border-t border-slate-50 my-1"></div>{% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-slate-400">近期無 5%+ 大戶申報</p>
+    {% endif %}
+  </div>
+
+</div>
+
+{% if tech_sig %}
+{# ── 技術指標明細 ───────────────────────────────────────────── #}
+{% macro flag_row(val, label, desc, mode) %}
+{% set hit = val and val | int == 1 %}
+{% set icon = '✅' if (hit and mode == 'entry') else ('⚠️' if (hit and mode == 'exit') else '❌') %}
+{% set color = '#10b981' if (hit and mode == 'entry') else ('#ef4444' if (hit and mode == 'exit') else '#94a3b8') %}
+<div class="flex items-start gap-2 py-1 border-b border-slate-50 last:border-0">
+  <span class="text-base leading-none mt-0.5">{{ icon }}</span>
+  <div>
+    <div class="text-xs font-semibold" style="color:{{ color }}">{{ label }}</div>
+    <div class="text-[11px] text-slate-400">{{ desc }}</div>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="mt-3 bg-white rounded-xl border border-slate-200 p-3">
+  <h4 class="text-xs font-semibold text-slate-600 mb-3">📐 技術指標明細</h4>
+
+  <div class="grid grid-cols-2 gap-2 mb-3">
+    {% set es = tech_sig.entry_score %}
+    {% set er = tech_sig.exit_risk %}
+    <div class="bg-slate-50 rounded-lg p-2 text-center">
+      <div class="text-[10px] text-slate-400 mb-1">進場信心分</div>
+      <div class="text-xl font-black
+        {% if es is not none and es >= 75 %}text-blue-600
+        {% elif es is not none and es >= 50 %}text-green-600
+        {% elif es is not none and es >= 25 %}text-yellow-600
+        {% elif es is not none %}text-red-500
+        {% else %}text-slate-300{% endif %}">
+        {% if es is not none %}{{ es | round(0) | int }}{% else %}—{% endif %}
+      </div>
+      <div class="text-[10px] text-slate-400">/100（VIX 折扣後）</div>
+    </div>
+    <div class="bg-slate-50 rounded-lg p-2 text-center">
+      <div class="text-[10px] text-slate-400 mb-1">出場風險分</div>
+      <div class="text-xl font-black
+        {% if er is not none and er >= 60 %}text-red-500
+        {% elif er is not none and er >= 30 %}text-yellow-600
+        {% elif er is not none %}text-green-600
+        {% else %}text-slate-300{% endif %}">
+        {% if er is not none %}{{ er | round(0) | int }}{% else %}—{% endif %}
+      </div>
+      <div class="text-[10px] text-slate-400">/100（越高越需注意）</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div>
+      <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">進場條件</div>
+      {{ flag_row(tech_sig.ma_aligned,    '多頭排列',      '20MA>50MA>200MA，收盤在 200MA 之上',        'entry') }}
+      {{ flag_row(tech_sig.rsi_reversal,  'RSI 超賣回升',  'RSI(14) 近 5 日曾 ≤ 35，現已回升至 ≥ 40', 'entry') }}
+      {{ flag_row(tech_sig.macd_golden,   'MACD 金叉',     'MACD 柱狀體由負轉正',                      'entry') }}
+      {{ flag_row(tech_sig.bb_breakout,   '布林突破',      '收盤突破布林上軌，量能 > 20日均量 1.5 倍',  'entry') }}
+      {{ flag_row(tech_sig.double_bottom, '雙重底',        '近 30 根 K 線偵測到雙重底型態',            'entry') }}
+      {{ flag_row(tech_sig.vcp_pattern,   'VCP 波動收斂',  '近 20 根 K 線振幅逐步縮小',                'entry') }}
+    </div>
+    <div>
+      <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">出場警示</div>
+      {{ flag_row(tech_sig.hard_stop,         '硬性止損警示',  '從近 20 日高點回落 > 7%',                    'exit') }}
+      {{ flag_row(tech_sig.below_20ma_3d,     '跌破 20MA ×3', '連續 3 日收盤低於 20MA',                     'exit') }}
+      {{ flag_row(tech_sig.rsi_divergence,    '頂背離',        'RSI > 75 後掉頭，或價格新高但 RSI 未創新高', 'exit') }}
+      {{ flag_row(tech_sig.atr_trailing_stop, 'ATR 止盈線',    '價格跌破近期高點 − ATR(14)×2',               'exit') }}
+
+      <div class="mt-3 grid grid-cols-2 gap-1 text-[11px]">
+        {% for label, val, fmt in [
+          ('RSI(14)',  tech_sig.rsi_14,    '%.1f'),
+          ('MACD柱',   tech_sig.macd_hist, '%+.3f'),
+          ('量能倍數',  tech_sig.vol_ratio, '%.2fx'),
+          ('MA20',     tech_sig.ma_20,     '%.2f'),
+          ('MA50',     tech_sig.ma_50,     '%.2f'),
+          ('MA200',    tech_sig.ma_200,    '%.2f'),
+          ('ATR(14)',  tech_sig.atr_14,    '%.2f'),
+        ] %}
+        {% if val is not none %}
+        <div class="flex justify-between bg-slate-50 rounded px-2 py-1">
+          <span class="text-slate-400">{{ label }}</span>
+          <span class="font-mono font-semibold text-slate-700">{{ fmt | format(val) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

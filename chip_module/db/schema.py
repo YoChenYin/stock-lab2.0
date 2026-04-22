@@ -172,6 +172,88 @@ def init_db(db_path: Path = DB_PATH):
         UNIQUE(ticker, date)
     )""")
 
+    # ── 9. 市場環境指標（每日）──────────────────────────────────────
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS market_environment (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        date                TEXT    NOT NULL UNIQUE,
+        -- VIX 恐慌指數
+        vix                 REAL,
+        vix_ma5             REAL,
+        vix_level           TEXT,   -- 'low'|'medium'|'high'
+        -- 10Y 美債殖利率
+        tnx_10y             REAL,
+        tnx_slope_20d       REAL,   -- 線性回歸斜率（每日變化率）
+        -- Mag 7 乖離率
+        mag7_avg_deviation  REAL,   -- 七巨頭相對 50MA 平均乖離%
+        mag7_deviations     TEXT,   -- JSON {ticker: deviation%}
+        mag7_risk           TEXT,   -- 'ok'|'caution'（乖離 > 15%）
+        -- 板塊 ETF（XLK 科技、XLF 金融、XLP 防禦）
+        xlk_chg_1d          REAL,
+        xlf_chg_1d          REAL,
+        xlp_chg_1d          REAL,
+        xlk_chg_5d          REAL,
+        xlf_chg_5d          REAL,
+        xlp_chg_5d          REAL,
+        updated_at          TEXT    DEFAULT (datetime('now'))
+    )""")
+
+    # ── 10. 技術面進出場信號（每日批次計算）─────────────────────────
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS tech_signals (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker              TEXT    NOT NULL,
+        date                TEXT    NOT NULL,
+        -- 進場指標旗標（0/1）
+        ma_aligned          INTEGER DEFAULT 0,  -- 20MA > 50MA > 200MA 且收盤 > 200MA
+        rsi_reversal        INTEGER DEFAULT 0,  -- RSI 從 <35 回升至 ≥40
+        macd_golden         INTEGER DEFAULT 0,  -- MACD 柱狀體由負轉正
+        bb_breakout         INTEGER DEFAULT 0,  -- 收盤 > 布林上軌 + 量能 1.5x
+        double_bottom       INTEGER DEFAULT 0,  -- 雙重底型態
+        vcp_pattern         INTEGER DEFAULT 0,  -- 波動收斂型態
+        -- 出場指標旗標（0/1）
+        hard_stop           INTEGER DEFAULT 0,  -- 近 20 日高點回落 > 7%
+        below_20ma_3d       INTEGER DEFAULT 0,  -- 連續 3 日 < 20MA
+        rsi_divergence      INTEGER DEFAULT 0,  -- 頂背離 或 RSI 超買掉頭
+        atr_trailing_stop   INTEGER DEFAULT 0,  -- 跌破 ATR×2 動態止盈線
+        -- 原始指標數值（透明化）
+        rsi_14              REAL,
+        macd_hist           REAL,
+        bb_upper            REAL,
+        bb_lower            REAL,
+        ma_20               REAL,
+        ma_50               REAL,
+        ma_200              REAL,
+        atr_14              REAL,
+        vol_ratio           REAL,   -- 當日成交量 / 20 日均量
+        -- 綜合分數
+        entry_score         REAL,   -- 0-100
+        exit_risk           REAL,   -- 0-100
+        signal_detail       TEXT,   -- JSON（各旗標 + 數值，完整明細）
+        updated_at          TEXT    DEFAULT (datetime('now')),
+        UNIQUE(ticker, date)
+    )""")
+
+    # ── 11. Factor MAX 歷史（每日，每因子一筆）──────────────────────
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS factor_max_history (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        date            TEXT    NOT NULL,
+        market          TEXT    NOT NULL,   -- 'US' | 'TW'
+        factor_name     TEXT    NOT NULL,
+        factor_label    TEXT,
+        max_ret         REAL,              -- 因子組合單日最大報酬 (%)
+        max_date        TEXT,              -- 哪一天達到 MAX
+        days_ago        INTEGER,           -- 距今幾個交易日
+        avg_ret_20d     REAL,              -- 近 20 日平均報酬
+        momentum_score  REAL,              -- 綜合動能評分 0-100
+        stock_count     INTEGER,
+        top_stocks      TEXT,              -- JSON list，MAX 當日漲最多的個股
+        lottery_stocks  TEXT,              -- JSON list，個股層面過熱（>5% 單日）
+        updated_at      TEXT    DEFAULT (datetime('now')),
+        UNIQUE(date, market, factor_name)
+    )""")
+
     # ── 索引 ─────────────────────────────────────────────────────
     indexes = [
         "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date   ON daily_prices(ticker, date DESC)",
@@ -182,6 +264,10 @@ def init_db(db_path: Path = DB_PATH):
         "CREATE INDEX IF NOT EXISTS idx_scores_ticker_date   ON chip_scores(ticker, date DESC)",
         "CREATE INDEX IF NOT EXISTS idx_scores_composite     ON chip_scores(date DESC, composite_swing DESC)",
         "CREATE INDEX IF NOT EXISTS idx_scores_whale         ON chip_scores(date DESC, whale_alert DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_tech_ticker_date     ON tech_signals(ticker, date DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_tech_entry_score     ON tech_signals(date DESC, entry_score DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_market_env_date      ON market_environment(date DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_factor_max_date      ON factor_max_history(date DESC, market, momentum_score DESC)",
     ]
     for idx in indexes:
         cur.execute(idx)

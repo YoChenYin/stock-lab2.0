@@ -21,6 +21,9 @@ from .fetchers.options_sentiment import fetch_options_sentiment
 from .fetchers.options_flow import fetch_options_flow
 from .fetchers.large_holder import fetch_large_holders
 from .signals.composite import run as calc_scores
+from .signals.technical_signal import run as calc_tech_signals
+from .fetchers.market_env import fetch_market_env
+from .signals.factor_max import run as calc_factor_max
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,9 +92,21 @@ def run(tickers: list, skip_institutional: bool = False):
         log.info("Step +: 機構持倉 (yfinance)")
         fetch_institutional(tickers)
 
-    # 9. 計算籌碼綜合分數（所有資料到位後才跑）
+    # 9. 市場環境指標（VIX / 10Y / Mag7 / 板塊 ETF）
+    log.info("Step +: 市場環境指標")
+    fetch_market_env()
+
+    # 10. 技術面進出場信號（每支股票）
+    log.info("Step +: 技術面信號 (Entry/Exit Score)")
+    calc_tech_signals(tickers)
+
+    # 11. 計算籌碼綜合分數（所有資料到位後才跑）
     log.info("Step final: 籌碼綜合分數")
     calc_scores(tickers)
+
+    # 12. Factor MAX（因子組合動能）
+    log.info("Step +: Factor MAX")
+    calc_factor_max()
 
     elapsed = (datetime.now() - start_time).seconds
     log.info(f"=== 更新完成，耗時 {elapsed}s ===")

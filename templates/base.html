@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Stock Lab 2.0{% endblock %}</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            up:      '#ef4444',
+            down:    '#22c55e',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+  <!-- Alpine.js (lightweight reactivity for tabs/toggles) -->
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- Plotly.js (charts) -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: inline-flex; }
+    .htmx-request.htmx-indicator  { display: inline-flex; }
+
+    /* Score color classes */
+    .score-high   { color: #2563eb; font-weight: 700; }
+    .score-good   { color: #16a34a; font-weight: 700; }
+    .score-mid    { color: #ca8a04; font-weight: 700; }
+    .score-low    { color: #dc2626; font-weight: 700; }
+
+    /* Tag badges */
+    .tag { display: inline-block; padding: 1px 7px; border-radius: 9999px;
+           font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+    .tag-red    { background: #fee2e2; color: #991b1b; }
+    .tag-blue   { background: #dbeafe; color: #1e40af; }
+    .tag-green  { background: #dcfce7; color: #166534; }
+    .tag-yellow { background: #fef9c3; color: #854d0e; }
+    .tag-purple { background: #f3e8ff; color: #6b21a8; }
+
+    /* Smooth expand */
+    .detail-row td { padding-top: 0 !important; padding-bottom: 0 !important; }
+    .detail-content { overflow: hidden; transition: max-height 0.25s ease; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <!-- Top Nav -->
+  <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <span class="font-bold text-lg text-primary">📈 Stock Lab</span>
+
+      <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+        <a href="/tw"
+           class="px-4 py-1.5 rounded-md text-sm font-medium transition
+                  {% if active_page == 'tw' %}bg-white shadow text-primary{% else %}text-slate-500 hover:text-slate-800{% endif %}">
+          台股
+        </a>
+        <a href="/us"
+           class="px-4 py-1.5 rounded-md text-sm font-medium transition
+                  {% if active_page == 'us' %}bg-white shadow text-primary{% else %}text-slate-500 hover:text-slate-800{% endif %}">
+          美股
+        </a>
+      </div>
+
+      <span class="text-xs text-slate-400 hidden sm:block">
+        更新：{{ fetch_time }}
+      </span>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main class="max-w-6xl mx-auto px-4 py-5">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Loading spinner template -->
+  <template id="spinner-tpl">
+    <div class="flex items-center justify-center gap-2 py-8 text-slate-400">
+      <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+      </svg>
+      <span class="text-sm">載入中...</span>
+    </div>
+  </template>
+
+</body>
+</html>

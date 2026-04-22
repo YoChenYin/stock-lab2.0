@@ -1,0 +1,230 @@
+{% macro score_bar(val) %}
+{% if val is not none %}
+{% set v = val | round(0) | int %}
+<div class="flex items-center gap-1.5">
+  <div class="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+    <div class="h-full rounded-full"
+         style="width:{{ v }}%;
+                background:{% if v >= 75 %}#2563eb{% elif v >= 55 %}#16a34a{% elif v >= 35 %}#ca8a04{% else %}#dc2626{% endif %};"></div>
+  </div>
+  <span class="text-xs font-mono w-8 text-right
+               {% if v >= 75 %}text-blue-600{% elif v >= 55 %}text-green-600{% elif v >= 35 %}text-yellow-600{% else %}text-red-500{% endif %}
+               font-semibold">{{ v }}</span>
+</div>
+{% else %}
+<span class="text-slate-200 text-xs">—</span>
+{% endif %}
+{% endmacro %}
+
+{% macro warn_badge(w) %}
+{% if "賣出" in w or "減倉" in w %}
+  <span class="tag tag-red">🔴 {{ w }}</span>
+{% elif "空頭" in w %}
+  <span class="tag tag-yellow">⚠️ {{ w }}</span>
+{% elif "派發" in w %}
+  <span class="tag tag-purple">📉 {{ w }}</span>
+{% elif "偏低" in w %}
+  <span class="tag tag-yellow">⚠️ {{ w }}</span>
+{% elif "止損" in w or "背離" in w or "20MA" in w or "ATR" in w %}
+  <span class="tag tag-red">🚨 {{ w }}</span>
+{% elif "過熱" in w or "反轉" in w %}
+  <span class="tag tag-purple">↩ {{ w }}</span>
+{% else %}
+  <span class="tag tag-yellow">⚠️ {{ w }}</span>
+{% endif %}
+{% endmacro %}
+
+{% if stocks %}
+
+{# ── 桌機版表格 ─────────────────────────────────────────── #}
+<div class="hidden sm:block overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-red-50 border-b border-red-100 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-4 py-3 text-left">股票</th>
+        <th class="px-4 py-3 text-right w-28">股價</th>
+        <th class="px-4 py-3 text-left">警示原因</th>
+        <th class="px-4 py-3 text-center w-20" title="技術面出場風險分 0-100（越高越需注意）">出場風險</th>
+        <th class="px-4 py-3 text-center w-24">內部人</th>
+        <th class="px-4 py-3 text-center w-24">空頭</th>
+        <th class="px-4 py-3 text-center w-24">量能</th>
+        <th class="px-4 py-3 text-center w-24">選擇權</th>
+        <th class="px-4 py-3 text-center w-24">機構</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-50">
+      {% for s in stocks %}
+      <tr class="{% if s.severity == 'high' %}bg-red-50/40{% elif s.severity == 'mid' %}bg-orange-50/30{% endif %} hover:bg-red-50 transition cursor-pointer"
+          onclick="toggleUSDetail('{{ s.ticker }}')">
+
+        {# 股票 + 產業 #}
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-1.5">
+            {% if s.severity == 'high' %}
+              <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+            {% elif s.severity == 'mid' %}
+              <span class="w-2 h-2 rounded-full bg-orange-400 shrink-0"></span>
+            {% else %}
+              <span class="w-2 h-2 rounded-full bg-yellow-300 shrink-0"></span>
+            {% endif %}
+            <div>
+              <div class="font-bold text-slate-800">{{ s.ticker }}</div>
+              <div class="text-xs text-slate-400 truncate max-w-[100px]">{{ s.name }}</div>
+            </div>
+          </div>
+          {% if s.sector %}
+          <span class="tag {{ s.sector_cls }} mt-1 ml-3.5 inline-block text-[10px] px-1.5 py-0.5">{{ s.sector }}</span>
+          {% endif %}
+        </td>
+
+        {# 股價 #}
+        <td class="px-4 py-3 text-right">
+          {% if s.price is not none %}
+          <div class="font-bold text-slate-800">${{ s.price }}</div>
+          <div class="text-xs font-semibold
+                      {% if s.price_chg > 0 %}text-red-500{% elif s.price_chg < 0 %}text-green-600{% else %}text-slate-400{% endif %}">
+            {% if s.price_chg > 0 %}▲+{% elif s.price_chg < 0 %}▼{% endif %}{{ s.price_chg }}%
+          </div>
+          {% else %}
+          <span class="text-slate-300 text-xs">—</span>
+          {% endif %}
+        </td>
+
+        {# 警示 badges #}
+        <td class="px-4 py-3">
+          <div class="flex flex-wrap gap-1">
+            {% for w in s.warnings %}{{ warn_badge(w) }}{% endfor %}
+          </div>
+        </td>
+
+        <td class="px-4 py-3">
+          {% if s.exit_risk is not none %}
+          {% set er = s.exit_risk | round(0) | int %}
+          <div class="text-center font-bold text-sm
+            {% if er >= 60 %}text-red-500{% elif er >= 30 %}text-yellow-600{% else %}text-green-600{% endif %}">
+            {{ er }}
+          </div>
+          {% else %}
+          <span class="text-slate-300 text-xs block text-center">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3">{{ score_bar(s.insider) }}</td>
+        <td class="px-4 py-3">{{ score_bar(s.short) }}</td>
+        <td class="px-4 py-3">{{ score_bar(s.volume) }}</td>
+        <td class="px-4 py-3">{{ score_bar(s.options) }}</td>
+        <td class="px-4 py-3">{{ score_bar(s.institution) }}</td>
+      </tr>
+      <!-- 展開列 -->
+      <tr id="us-detail-row-{{ s.ticker }}" class="hidden">
+        <td colspan="9" class="px-4 pb-3">
+          <div id="us-detail-{{ s.ticker }}" class="bg-slate-50 rounded-xl p-4 text-sm text-slate-500 text-center">
+            <svg class="animate-spin h-4 w-4 mx-auto text-slate-300" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ── 手機版卡片 ─────────────────────────────────────────── #}
+<div class="sm:hidden divide-y divide-slate-100">
+  {% for s in stocks %}
+  <div class="p-4 {% if s.severity == 'high' %}bg-red-50/50{% elif s.severity == 'mid' %}bg-orange-50/30{% endif %}">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          {% if s.severity == 'high' %}
+            <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+          {% elif s.severity == 'mid' %}
+            <span class="w-2 h-2 rounded-full bg-orange-400 shrink-0"></span>
+          {% else %}
+            <span class="w-2 h-2 rounded-full bg-yellow-300 shrink-0"></span>
+          {% endif %}
+          <span class="font-bold text-slate-800">{{ s.ticker }}</span>
+          {% if s.sector %}<span class="tag {{ s.sector_cls }} text-[10px] px-1.5 py-0.5">{{ s.sector }}</span>{% endif %}
+        </div>
+        <div class="text-xs text-slate-400 truncate mt-0.5 ml-4">{{ s.name }}</div>
+        <div class="flex flex-wrap gap-1 mt-1.5 ml-4">
+          {% for w in s.warnings %}{{ warn_badge(w) }}{% endfor %}
+        </div>
+      </div>
+      <div class="text-right shrink-0">
+        {% if s.price is not none %}
+        <div class="text-xl font-bold
+                    {% if s.price_chg > 0 %}text-red-500{% elif s.price_chg < 0 %}text-green-600{% else %}text-slate-700{% endif %}">
+          ${{ s.price }}
+        </div>
+        <div class="text-xs font-semibold
+                    {% if s.price_chg > 0 %}text-red-400{% elif s.price_chg < 0 %}text-green-500{% else %}text-slate-400{% endif %}">
+          {% if s.price_chg > 0 %}▲+{% elif s.price_chg < 0 %}▼{% endif %}{{ s.price_chg }}%
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-3 grid grid-cols-3 gap-1 text-center text-xs">
+      {% for label, val in [('內部人', s.insider), ('空頭', s.short), ('量能', s.volume)] %}
+      <div class="bg-white rounded-lg p-1.5 border border-slate-100">
+        <div class="text-slate-400 text-[10px]">{{ label }}</div>
+        <div class="font-semibold mt-0.5
+                    {% if val is not none and val >= 75 %}text-blue-600
+                    {% elif val is not none and val >= 55 %}text-green-600
+                    {% elif val is not none and val >= 35 %}text-yellow-600
+                    {% elif val is not none %}text-red-500
+                    {% else %}text-slate-300{% endif %}">
+          {% if val is not none %}{{ val | round(0) | int }}{% else %}—{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if s.exit_risk is not none %}
+    <div class="mt-1.5 flex justify-end">
+      {% set er = s.exit_risk | round(0) | int %}
+      <span class="text-xs font-semibold
+        {% if er >= 60 %}text-red-500{% elif er >= 30 %}text-yellow-600{% else %}text-green-600{% endif %}">
+        出場風險 {{ er }}/100
+      </span>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{# 統計 #}
+{% set ns = namespace(high=0, mid=0, low=0) %}
+{% for s in stocks %}
+  {% if s.severity == 'high' %}{% set ns.high = ns.high + 1 %}{% endif %}
+  {% if s.severity == 'mid' %}{% set ns.mid = ns.mid + 1 %}{% endif %}
+  {% if s.severity == 'low' %}{% set ns.low = ns.low + 1 %}{% endif %}
+{% endfor %}
+<div class="px-4 py-3 bg-red-50 border-t border-red-100 text-xs text-slate-500 text-center">
+  共 {{ stocks | length }} 檔警示 ·
+  <span class="text-red-500">● 高風險 {{ ns.high }}</span> ｜
+  <span class="text-orange-400">● 中風險 {{ ns.mid }}</span> ｜
+  <span class="text-yellow-500">● 低風險 {{ ns.low }}</span>
+</div>
+
+<script>
+function toggleUSDetail(ticker) {
+  const row = document.getElementById('us-detail-row-' + ticker);
+  const div = document.getElementById('us-detail-' + ticker);
+  const isHidden = row.classList.contains('hidden');
+  if (isHidden) {
+    row.classList.remove('hidden');
+    htmx.ajax('GET', '/us/stock/' + ticker + '/detail', { target: div, swap: 'innerHTML' });
+  } else {
+    row.classList.add('hidden');
+  }
+}
+</script>
+
+{% else %}
+<div class="px-4 py-8 text-center text-slate-400 text-sm">
+  <div class="text-3xl mb-2">✅</div>
+  目前無出場警示標的
+</div>
+{% endif %}

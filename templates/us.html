@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% set active_page = "us" %}
+
+{% block title %}美股籌碼雷達 — Stock Lab{% endblock %}
+
+{% block content %}
+
+{# ── 市場行情總覽 ──────────────────────────────────────────────────── #}
+{% if env %}
+{% set vix = env.vix %}
+{% set vix_level = env.vix_level or 'medium' %}
+{% set tnx = env.tnx_10y %}
+{% set slope = env.tnx_slope_20d %}
+{% set mag7_avg = env.mag7_avg_deviation %}
+{% set mag7_risk = env.mag7_risk or 'ok' %}
+{% set xlk1 = env.xlk_chg_1d %}
+{% set xlf1 = env.xlf_chg_1d %}
+{% set xlp1 = env.xlp_chg_1d %}
+
+{# VIX 警示橫幅 #}
+{% if vix_level == 'high' %}
+<div class="flex items-center gap-3 px-4 py-2.5 mb-3 bg-red-50 border border-red-200 rounded-xl text-sm">
+  <span class="text-red-500 text-lg">⚠️</span>
+  <span class="text-red-600 font-semibold">VIX = {{ "%.1f" | format(vix) }} — 市場恐慌！系統已對所有進場分數套用 <strong>0.8 折扣</strong></span>
+  <span class="ml-auto text-red-400 text-xs">建議縮小部位</span>
+</div>
+{% elif vix_level == 'medium' %}
+<div class="flex items-center gap-2 px-4 py-2 mb-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+  <span>🟡</span>
+  <span>VIX = {{ "%.1f" | format(vix) }} — 中等風險，進場分數套用 0.95 折扣</span>
+</div>
+{% endif %}
+
+{# 四欄指標卡 #}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+
+  {# VIX 卡 #}
+  {% set vc = '#ef4444' if vix_level == 'high' else ('#f59e0b' if vix_level == 'medium' else '#10b981') %}
+  {% set vlabel = '🔴 高風險 (>25)' if vix_level == 'high' else ('🟡 中等風險' if vix_level == 'medium' else '🟢 低風險 (<15)') %}
+  <div class="bg-white border border-slate-200 rounded-xl p-3" style="border-top: 3px solid {{ vc }}">
+    <div class="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">😱 VIX 恐慌指數</div>
+    <div class="text-2xl font-black" style="color:{{ vc }}">{{ "%.1f" | format(vix) if vix is not none else "—" }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">5日均：{{ "%.1f" | format(env.vix_ma5) if env.vix_ma5 is not none else "—" }}</div>
+    <div class="text-xs font-semibold mt-1" style="color:{{ vc }}">{{ vlabel }}</div>
+  </div>
+
+  {# 10Y 殖利率卡 #}
+  {% if slope is not none %}
+    {% if slope > 0.02 %}{% set sc = '#ef4444' %}{% set slabel = '⬆ 快速上升（成長股減分）' %}
+    {% elif slope > 0.005 %}{% set sc = '#f59e0b' %}{% set slabel = '↗ 溫和上升' %}
+    {% elif slope < -0.005 %}{% set sc = '#10b981' %}{% set slabel = '↘ 下降' %}
+    {% else %}{% set sc = '#64748b' %}{% set slabel = '→ 持平' %}{% endif %}
+  {% else %}{% set sc = '#94a3b8' %}{% set slabel = '—' %}{% endif %}
+  <div class="bg-white border border-slate-200 rounded-xl p-3" style="border-top: 3px solid {{ sc }}">
+    <div class="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">🏦 10Y 美債殖利率</div>
+    <div class="text-2xl font-black" style="color:{{ sc }}">{{ "%.2f" | format(tnx) ~ "%" if tnx is not none else "—" }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">20日斜率</div>
+    <div class="text-xs font-semibold mt-1" style="color:{{ sc }}">{{ slabel }}</div>
+  </div>
+
+  {# Mag7 乖離卡 #}
+  {% set mc = '#ef4444' if mag7_risk == 'caution' else '#10b981' %}
+  <div class="bg-white border border-slate-200 rounded-xl p-3" style="border-top: 3px solid {{ mc }}">
+    <div class="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">🔭 Mag7 50MA 乖離</div>
+    <div class="text-2xl font-black" style="color:{{ mc }}">
+      {% if mag7_avg is not none %}{{ "%+.1f" | format(mag7_avg) }}%{% else %}—{% endif %}
+    </div>
+    <div class="text-xs text-slate-400 mt-0.5">七巨頭平均</div>
+    <div class="text-xs font-semibold mt-1" style="color:{{ mc }}">
+      {% if mag7_risk == 'caution' %}⚠ 集體高乖離，回檔風險{% else %}正常範圍{% endif %}
+    </div>
+  </div>
+
+  {# 板塊輪動卡 #}
+  <div class="bg-white border border-slate-200 rounded-xl p-3" style="border-top: 3px solid #2563eb">
+    <div class="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">🔄 板塊輪動 (1日)</div>
+    {% for label, sym, val in [('科技', 'XLK', xlk1), ('金融', 'XLF', xlf1), ('防禦', 'XLP', xlp1)] %}
+    <div class="flex justify-between items-center text-xs py-0.5">
+      <span class="text-slate-500">{{ label }} ({{ sym }})</span>
+      {% if val is not none %}
+      <span class="font-bold {% if val > 0 %}text-green-600{% elif val < 0 %}text-red-500{% else %}text-slate-400{% endif %}">
+        {% if val > 0 %}▲+{% elif val < 0 %}▼{% endif %}{{ "%.2f" | format(val) }}%
+      </span>
+      {% else %}<span class="text-slate-300">—</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endif %}
+{# ─────────────────────────────────────────────────────────────────── #}
+
+{# ── Factor MAX 因子熱度榜 ─────────────────────────────────────────── #}
+<div x-data="{ open: false }" class="mb-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <button @click="open = !open; if(open && !$el.dataset.loaded) { htmx.ajax('GET', '/us/factor-max', {target: '#us-factor-max-area', swap: 'innerHTML'}); $el.dataset.loaded = '1' }"
+          class="w-full flex items-center justify-between px-4 py-3 text-left
+                 font-semibold text-slate-700 hover:bg-slate-50 transition text-sm">
+    <span>📊 因子熱度榜 <span class="text-xs font-normal text-slate-400 ml-1">Factor MAX — 因子層動能持續，個股層注意樂透反轉</span></span>
+    <span x-text="open ? '▲' : '▼'" class="text-slate-400 text-sm shrink-0"></span>
+  </button>
+  <div x-show="open" x-cloak x-transition>
+    <div id="us-factor-max-area">
+      <div class="flex justify-center py-6 text-slate-300 text-xs">點擊展開載入...</div>
+    </div>
+  </div>
+</div>
+
+<div x-data="{ tab: 'all' }" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+
+  <!-- Tab bar + 操作按鈕 -->
+  <div class="px-4 pt-4 pb-0 border-b border-slate-100">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+
+      <!-- Tabs -->
+      <div class="flex gap-1 bg-slate-100 rounded-lg p-1 self-start flex-wrap">
+        <button @click="tab = 'all'"
+                :class="tab === 'all'
+                  ? 'bg-white text-slate-700 shadow-sm font-semibold'
+                  : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-1.5 text-sm rounded-md transition">
+          📋 全部
+        </button>
+        <button @click="tab = 'entry'"
+                :class="tab === 'entry'
+                  ? 'bg-white text-blue-600 shadow-sm font-semibold'
+                  : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-1.5 text-sm rounded-md transition">
+          📈 進場選股
+        </button>
+        <button @click="tab = 'exit'"
+                :class="tab === 'exit'
+                  ? 'bg-white text-red-500 shadow-sm font-semibold'
+                  : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-1.5 text-sm rounded-md transition">
+          🚨 出場警示
+        </button>
+      </div>
+
+      <!-- 全部 掃描按鈕 -->
+      <button x-show="tab === 'all'"
+        hx-post="/us/all-scan"
+        hx-target="#us-all-results"
+        hx-swap="innerHTML"
+        hx-indicator="#us-all-spinner"
+        class="flex items-center gap-2 px-5 py-2.5 bg-slate-700 text-white text-sm
+               font-semibold rounded-lg hover:bg-slate-800 active:scale-95 transition self-start shrink-0">
+        <span id="us-all-spinner" class="htmx-indicator">
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+        </span>
+        🔍 全市場掃描
+      </button>
+
+      <!-- 週期 selector（進場用） -->
+      <div x-show="tab === 'entry'" x-data="{ tf: '波段 (1–4週)' }">
+        <select
+          x-model="tf"
+          @change="htmx.ajax('GET', '/us/radar?timeframe=' + encodeURIComponent(tf), {target: '#radar-area', swap: 'innerHTML'})"
+          class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white text-slate-700
+                 focus:outline-none focus:ring-2 focus:ring-primary">
+          {% for tf in timeframes %}
+          <option value="{{ tf }}">{{ tf }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- 出場 掃描按鈕 -->
+      <button x-show="tab === 'exit'"
+        hx-get="/us/exit-scan"
+        hx-target="#exit-area"
+        hx-swap="innerHTML"
+        hx-indicator="#exit-spinner"
+        class="flex items-center gap-2 px-5 py-2.5 bg-red-500 text-white text-sm
+               font-semibold rounded-lg hover:bg-red-600 active:scale-95 transition self-start shrink-0">
+        <span id="exit-spinner" class="htmx-indicator">
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+        </span>
+        🔍 掃描警示
+      </button>
+    </div>
+
+    <!-- Sub-description + 邏輯提示 -->
+    <div x-show="tab === 'all'" class="pb-3" x-data="{ showHint: false }">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-slate-400">全宇宙股票狀態一覽，有內部人買進者置頂，依綜合分排序</p>
+        <button @click="showHint = !showHint"
+                class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted">
+          ❓ 說明
+        </button>
+      </div>
+      <div x-show="showHint" x-cloak x-transition
+           class="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+        <div><span class="inline-block w-16 font-semibold text-blue-600">📈 進場</span>綜合分 ≥ 65，或觸發進場時機（entry_timing），或巨鯨且分數 ≥ 50</div>
+        <div><span class="inline-block w-16 font-semibold text-red-500">🚨 出場</span>綜合分 &lt; 35，或空頭率/量能派發分數 &lt; 30，或技術止損觸發</div>
+        <div><span class="inline-block w-16 font-semibold text-slate-500">⚪ 觀望</span>不符合以上條件，靜待信號確立</div>
+        <div class="pt-1 border-t border-slate-200 text-slate-500">🏷 <b>insider↑</b> = 多位內部人近期買進（Form 4，insider_score ≥ 70），此類標的自動置頂</div>
+      </div>
+    </div>
+
+    <div x-show="tab === 'entry'" class="pb-3" x-data="{ showHint: false }">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-slate-400">整合：內部人 Form4 ｜空頭興趣｜量能 OBV｜選擇權流量｜機構持倉</p>
+        <button @click="showHint = !showHint"
+                class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted">
+          ❓ 選股邏輯
+        </button>
+      </div>
+      <div x-show="showHint" x-cloak x-transition
+           class="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+        <div class="font-semibold text-blue-700 mb-1">📈 進場選股 — 5 維度籌碼評分（各 0–100 分）</div>
+        <div>👤 <b>內部人（insider）</b>：SEC Form 4 近 30/90 天買賣比。分數 ≥ 70 → <span class="text-blue-600 font-semibold">insider↑</span> 標籤；分數 ≤ 15 → <span class="text-slate-500">insider↓</span>（僅資訊，不作出場依據）</div>
+        <div>📉 <b>空頭（short）</b>：空頭率 + 空頭變化趨勢。分數高表示空頭比例下降（回補動能）</div>
+        <div>📊 <b>量能（volume）</b>：OBV 背離偵測 + CMF/MFI 資金流向。分數高表示資金持續流入</div>
+        <div>🎯 <b>選擇權（options）</b>：三維度加權（OTM call 激增 40%＋異常大單密度 35%＋C/P 偏斜 25%），均與 20 日歷史基準做 z-score 比較，分數 ≥ 75 觸發「options異常」標籤</div>
+        <div>🏛 <b>機構（institutional）</b>：13F 季度持倉變化趨勢。分數高表示機構持續加倉</div>
+        <div class="mt-1.5 pt-1.5 border-t border-blue-200 text-slate-500">
+          綜合分（composite）= 五維度加權合成，VIX 高時進場分數另乘折扣（高風險期 ×0.8）
+        </div>
+      </div>
+    </div>
+
+    <div x-show="tab === 'exit'" class="pb-3" x-data="{ showHint: false }">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-slate-400">綜合分偏低｜空頭率高｜量能派發｜機構減倉｜技術止損</p>
+        <button @click="showHint = !showHint"
+                class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted">
+          ❓ 選股邏輯
+        </button>
+      </div>
+      <div x-show="showHint" x-cloak x-transition
+           class="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+        <div class="font-semibold text-red-600 mb-1">🚨 出場警示條件（符合任一即列入）</div>
+        <div>📊 <b>綜合分偏低</b>：composite &lt; 35（五維度加權分數整體偏空）</div>
+        <div>📉 <b>空頭率高</b>：short_score &lt; 30（空頭比例居高不下 / 仍在擴大）</div>
+        <div>💸 <b>量能派發</b>：volume_score &lt; 30 或偵測到 volume_distribution（OBV 持續背離下行）</div>
+        <div>🏛 <b>機構減倉</b>：institutional_score &lt; 30（13F 顯示機構持倉季度縮減）</div>
+        <div>🛑 <b>技術止損</b>：硬性止損 -7% ｜跌破 20MA×3日 ｜RSI 頂背離 ｜ATR 止盈線破</div>
+        <div>⚠️ <b>個股過熱反轉</b>：Factor MAX 識別為同族群中漲幅最大（樂透效應），回檔風險高</div>
+        <div class="mt-1.5 pt-1.5 border-t border-red-200 text-slate-500">
+          注意：內部人賣出（insider↓）不列為出場條件 — 高管賣股常為個人稅務/多元化需求，與股票前景無直接關係
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 全部 Results area -->
+  <div x-show="tab === 'all'">
+    <div id="us-all-results">
+      <div class="p-6 text-center text-slate-400 text-sm">
+        <div class="text-3xl mb-2">📋</div>
+        點擊「全市場掃描」查看所有股票的目前狀態
+      </div>
+    </div>
+  </div>
+
+  <!-- 進場 Radar area (auto-load on page render) -->
+  <div x-show="tab === 'entry'">
+    <div id="radar-area"
+         hx-get="/us/radar"
+         hx-trigger="load"
+         hx-indicator="#radar-spinner">
+      <div id="radar-spinner" class="htmx-indicator flex justify-center py-8">
+        <svg class="animate-spin h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 出場 area -->
+  <div x-show="tab === 'exit'">
+    <div id="exit-area">
+      <div class="p-6 text-center text-slate-400 text-sm">
+        <div class="text-3xl mb-2">🛡️</div>
+        點擊「掃描警示」檢查持倉出場訊號
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

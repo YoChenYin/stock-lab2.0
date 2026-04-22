@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% set active_page = "tw" %}
+
+{% block title %}台股選股 — Stock Lab{% endblock %}
+
+{% block content %}
+
+<!-- Factor MAX 因子熱度榜 -->
+<div x-data="{ open: false }" class="mb-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <button @click="open = !open; if(open && !$el.dataset.loaded) { htmx.ajax('GET', '/tw/factor-max', {target: '#tw-factor-max-area', swap: 'innerHTML'}); $el.dataset.loaded = '1' }"
+          class="w-full flex items-center justify-between px-4 py-3 text-left
+                 font-semibold text-slate-700 hover:bg-slate-50 transition text-sm">
+    <span>📊 因子熱度榜 <span class="text-xs font-normal text-slate-400 ml-1">Factor MAX — 外資/投信/雙強因子動能</span></span>
+    <span x-text="open ? '▲' : '▼'" class="text-slate-400 text-sm shrink-0"></span>
+  </button>
+  <div x-show="open" x-cloak x-transition>
+    <div id="tw-factor-max-area">
+      <div class="flex justify-center py-6 text-slate-300 text-xs">點擊展開載入...</div>
+    </div>
+  </div>
+</div>
+
+<!-- 族群資金熱圖（預設展開，點標題收合） -->
+<div x-data="{ open: true }" class="mb-5">
+  <button @click="open = !open"
+          class="w-full flex items-center justify-between px-4 py-3
+                 bg-white rounded-xl border border-slate-200 shadow-sm
+                 text-left font-semibold text-slate-700 hover:bg-slate-50 transition"
+          hx-get="/tw/heatmap"
+          hx-target="#heatmap-area"
+          hx-trigger="click once"
+          hx-indicator="#heatmap-spinner">
+    <span>🔥 族群資金熱圖</span>
+    <span x-text="open ? '▲' : '▼'" class="text-slate-400 text-sm"></span>
+  </button>
+
+  <div x-show="open" x-cloak x-transition class="mt-2">
+    <!-- Loading indicator -->
+    <div id="heatmap-spinner" class="htmx-indicator flex justify-center py-6">
+      <svg class="animate-spin h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+      </svg>
+    </div>
+    <div id="heatmap-area"></div>
+  </div>
+</div>
+
+
+<!-- 選股掃描 (全部 / 進場 / 出場 tabs) -->
+<div x-data="{ tab: 'all' }" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+
+  <!-- Tab bar + 掃描按鈕 -->
+  <div class="px-4 pt-4 pb-0 border-b border-slate-100">
+    <div class="flex items-center justify-between gap-3 mb-3">
+
+      <!-- Tabs -->
+      <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
+        <button @click="tab = 'all'"
+                :class="tab === 'all'
+                  ? 'bg-white text-slate-700 shadow-sm font-semibold'
+                  : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-1.5 text-sm rounded-md transition">
+          📋 全部
+        </button>
+        <button @click="tab = 'entry'"
+                :class="tab === 'entry'
+                  ? 'bg-white text-blue-600 shadow-sm font-semibold'
+                  : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-1.5 text-sm rounded-md transition">
+          📈 進場選股
+        </button>
+        <button @click="tab = 'exit'"
+                :class="tab === 'exit'
+                  ? 'bg-white text-red-500 shadow-sm font-semibold'
+                  : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-1.5 text-sm rounded-md transition">
+          🚨 出場警示
+        </button>
+      </div>
+
+      <!-- 掃描按鈕 (all) -->
+      <button x-show="tab === 'all'"
+        hx-post="/tw/all-scan"
+        hx-target="#all-results"
+        hx-swap="innerHTML"
+        hx-indicator="#all-spinner"
+        class="flex items-center gap-2 px-5 py-2.5 bg-slate-700 text-white text-sm
+               font-semibold rounded-lg hover:bg-slate-800 active:scale-95 transition shrink-0">
+        <span id="all-spinner" class="htmx-indicator">
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+        </span>
+        🔍 全市場掃描
+      </button>
+
+      <!-- 掃描按鈕 (entry) -->
+      <button x-show="tab === 'entry'"
+        hx-post="/tw/scan"
+        hx-target="#scan-results"
+        hx-swap="innerHTML"
+        hx-indicator="#scan-spinner"
+        class="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm
+               font-semibold rounded-lg hover:bg-blue-700 active:scale-95 transition shrink-0">
+        <span id="scan-spinner" class="htmx-indicator">
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+        </span>
+        🚀 開始掃描
+      </button>
+
+      <!-- 掃描按鈕 (exit) -->
+      <button x-show="tab === 'exit'"
+        hx-post="/tw/exit-scan"
+        hx-target="#exit-results"
+        hx-swap="innerHTML"
+        hx-indicator="#exit-spinner"
+        class="flex items-center gap-2 px-5 py-2.5 bg-red-500 text-white text-sm
+               font-semibold rounded-lg hover:bg-red-600 active:scale-95 transition shrink-0">
+        <span id="exit-spinner" class="htmx-indicator">
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+        </span>
+        🔍 掃描警示
+      </button>
+
+    </div>
+
+    <!-- Sub-description + 邏輯提示 -->
+    <div x-show="tab === 'all'" class="pb-3" x-data="{ showHint: false }">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-slate-400">全市場 {{ STOCK_POOL|length if STOCK_POOL else '' }} 檔股票狀態一覽，不過濾，依 SMS 評分排序</p>
+        <button @click="showHint = !showHint"
+                class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted">
+          ❓ 說明
+        </button>
+      </div>
+      <div x-show="showHint" x-cloak x-transition
+           class="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+        <div><span class="inline-block w-16 font-semibold text-blue-600">📈 進場</span>有正向信號（翻轉↑ / 蓄力 / 營收↑）或 SMS ≥ 55，且出場警示 ≤ 1 個</div>
+        <div><span class="inline-block w-16 font-semibold text-red-500">🚨 出場</span>同時出現 2 個以上出場警示（外資轉賣、空頭排列、跌破五日線等）</div>
+        <div><span class="inline-block w-16 font-semibold text-slate-500">⚪ 觀望</span>無明顯訊號，靜待方向確立</div>
+      </div>
+    </div>
+
+    <div x-show="tab === 'entry'" class="pb-3" x-data="{ showHint: false }">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-slate-400">整合：雙強（營收+籌碼）｜翻轉↑｜蓄力突破</p>
+        <button @click="showHint = !showHint"
+                class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted">
+          ❓ 選股邏輯
+        </button>
+      </div>
+      <div x-show="showHint" x-cloak x-transition
+           class="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+        <div class="font-semibold text-blue-700 mb-1">📈 進場選股條件（符合任一即列入）</div>
+        <div>🔥 <b>雙強</b>：近3月營收連月成長 <span class="text-slate-400">＋</span> 5D法人集中度 &gt; 10D &gt; 20D（全面加速）</div>
+        <div>↑ <b>翻轉</b>：外資或投信在近3日內由賣超翻轉為買超</div>
+        <div>🗜 <b>蓄力</b>：近20根K線振幅逐步收縮，等待方向選擇</div>
+        <div>📈 <b>營收↑</b>：近3月 YoY 均正且最新月加速成長</div>
+        <div>👥 <b>籌碼↑</b>：5D集中度高於10D高於20D（但尚未達雙強）</div>
+        <div class="mt-1.5 pt-1.5 border-t border-blue-200 text-slate-500">
+          <b>自動排除</b>：空頭排列（MA5 &lt; MA10 &lt; MA20）｜籌碼加速流出（5D低於20D超過1%）｜雙月YoY均負
+        </div>
+      </div>
+    </div>
+
+    <div x-show="tab === 'exit'" class="pb-3" x-data="{ showHint: false }">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-slate-400">法人轉賣｜空頭趨勢｜跌破五日線｜籌碼加速流出｜營收連月衰退</p>
+        <button @click="showHint = !showHint"
+                class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted">
+          ❓ 選股邏輯
+        </button>
+      </div>
+      <div x-show="showHint" x-cloak x-transition
+           class="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+        <div class="font-semibold text-red-600 mb-1">🚨 出場警示條件（符合任一即列入）</div>
+        <div>🔴 <b>外資轉賣 / 投信轉賣</b>：近3日由買超翻轉為賣超</div>
+        <div>🔴 <b>法人同步賣超</b>：外資+投信同時連賣 ≥ 3 天</div>
+        <div>⚠️ <b>跌破五日線</b>：收盤低於 MA5</div>
+        <div>⚠️ <b>空頭排列</b>：MA5 &lt; MA10 &lt; MA20</div>
+        <div>📉 <b>籌碼加速流出</b>：5D法人集中度比20D低超過1%</div>
+        <div>💸 <b>營收連月衰退</b>：近兩月 YoY 均為負</div>
+        <div class="mt-1.5 pt-1.5 border-t border-red-200 text-slate-500">
+          警示等級：🔴 高風險（≥3個）｜🟠 中風險（2個）｜🟡 低風險（1個）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全部 Results area -->
+  <div x-show="tab === 'all'">
+    <div id="all-results">
+      <div class="p-6 text-center text-slate-400 text-sm">
+        <div class="text-3xl mb-2">📋</div>
+        點擊「全市場掃描」查看所有股票的目前狀態
+      </div>
+    </div>
+  </div>
+
+  <!-- 進場 Results area -->
+  <div x-show="tab === 'entry'">
+    <div id="scan-results">
+      <div class="p-6 text-center text-slate-400 text-sm">
+        <div class="text-3xl mb-2">📊</div>
+        點擊「開始掃描」掃描全市場進場機會
+      </div>
+    </div>
+  </div>
+
+  <!-- 出場 Results area -->
+  <div x-show="tab === 'exit'">
+    <div id="exit-results">
+      <div class="p-6 text-center text-slate-400 text-sm">
+        <div class="text-3xl mb-2">🛡️</div>
+        點擊「掃描警示」檢查持倉出場訊號
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

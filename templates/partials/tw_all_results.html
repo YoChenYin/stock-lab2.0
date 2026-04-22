@@ -1,0 +1,256 @@
+{# ── Macros ─────────────────────────────────────────────── #}
+
+{% macro status_badge(s) %}
+{% if s.status == "entry" %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold
+               bg-blue-100 text-blue-700">📈 進場</span>
+{% elif s.status == "exit" %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold
+               bg-red-100 text-red-600">🚨 出場</span>
+{% else %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold
+               bg-slate-100 text-slate-500">⚪ 觀望</span>
+{% endif %}
+{% endmacro %}
+
+{% macro sms_chip(score) %}
+{% if score >= 75 %}
+  <span class="font-bold text-blue-600">{{ score | int }}</span>
+{% elif score >= 55 %}
+  <span class="font-bold text-green-600">{{ score | int }}</span>
+{% elif score >= 35 %}
+  <span class="font-bold text-yellow-500">{{ score | int }}</span>
+{% else %}
+  <span class="font-bold text-red-400">{{ score | int }}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro battle_badge(b) %}
+{% if b.color == "green" %}
+  <span class="tag tag-green text-[10px]">{{ b.label }}</span>
+{% elif b.color == "red" %}
+  <span class="tag tag-red text-[10px]">{{ b.label }}</span>
+{% elif b.color == "blue" %}
+  <span class="tag tag-blue text-[10px]">{{ b.label }}</span>
+{% elif b.color == "yellow" %}
+  <span class="tag tag-yellow text-[10px]">{{ b.label }}</span>
+{% else %}
+  <span class="tag text-[10px]" style="background:#f1f5f9;color:#64748b;">{{ b.label }}</span>
+{% endif %}
+{% endmacro %}
+
+{% if stocks %}
+
+{# ── 統計列 ─────────────────────────────────────────────── #}
+{% set ns = namespace(entry=0, exit=0, neutral=0) %}
+{% for s in stocks %}
+  {% if s.status == "entry" %}{% set ns.entry = ns.entry + 1 %}
+  {% elif s.status == "exit" %}{% set ns.exit = ns.exit + 1 %}
+  {% else %}{% set ns.neutral = ns.neutral + 1 %}{% endif %}
+{% endfor %}
+<div class="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex flex-wrap gap-4 text-xs text-slate-500">
+  <span>共 <b class="text-slate-700" id="all-total">{{ stocks | length }}</b> 檔
+        <span id="all-filter-hint" class="hidden text-slate-400">（搜尋結果 <b id="all-visible-count"></b> 檔）</span>
+  </span>
+  <span class="text-blue-600">📈 進場機會 <b>{{ ns.entry }}</b></span>
+  <span class="text-slate-500">⚪ 觀望 <b>{{ ns.neutral }}</b></span>
+  <span class="text-red-500">🚨 出場警示 <b>{{ ns.exit }}</b></span>
+  <span class="ml-auto text-slate-400">{{ fetch_time }}</span>
+</div>
+
+<!-- 搜尋框 -->
+<div class="px-4 py-2 border-b border-slate-100">
+  <div class="relative">
+    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">🔍</span>
+    <input id="all-search-input"
+           type="text"
+           placeholder="搜尋代號或名稱（例：2330、台積電）"
+           oninput="filterAllStocks(this.value)"
+           autocomplete="off"
+           class="w-full pl-8 pr-8 py-1.5 text-sm border border-slate-200 rounded-lg
+                  focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white">
+    <button onclick="clearAllSearch()"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500
+                   text-base leading-none hidden" id="all-search-clear">✕</button>
+  </div>
+</div>
+
+{# ── 桌機版表格 ─────────────────────────────────────────── #}
+<div class="hidden sm:block overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-slate-50 border-b border-slate-100 text-slate-400 text-xs uppercase tracking-wide">
+        <th class="px-4 py-3 text-left">標的</th>
+        <th class="px-4 py-3 text-center">狀態</th>
+        <th class="px-4 py-3 text-center">SMS</th>
+        <th class="px-4 py-3 text-center">外資 / 投信</th>
+        <th class="px-4 py-3 text-center">法人對決</th>
+        <th class="px-4 py-3 text-center">技術</th>
+        <th class="px-4 py-3 text-left">信號</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-50">
+      {% for s in stocks %}
+      <tr data-all-row data-sid="{{ s.sid }}" data-name="{{ s.name }}"
+          class="
+        {% if s.status == 'entry' %}hover:bg-blue-50{% elif s.status == 'exit' %}bg-red-50/30 hover:bg-red-50{% else %}hover:bg-slate-50{% endif %}
+        transition">
+
+        {# 標的 + 股價 #}
+        <td class="px-4 py-2.5">
+          <div class="font-bold text-slate-800 text-[13px]">{{ s.name }}</div>
+          <div class="text-[11px] text-slate-400">{{ s.sid }}</div>
+          <div class="mt-0.5 flex items-baseline gap-1">
+            <span class="font-extrabold text-base
+                         {% if s.price_chg > 0 %}text-red-500{% elif s.price_chg < 0 %}text-green-600{% else %}text-slate-700{% endif %}">
+              {{ s.price }}
+            </span>
+            <span class="text-[10px]
+                         {% if s.price_chg > 0 %}text-red-400{% elif s.price_chg < 0 %}text-green-500{% else %}text-slate-400{% endif %}">
+              {% if s.price_chg > 0 %}▲+{% elif s.price_chg < 0 %}▼{% endif %}{{ s.price_chg }}%
+            </span>
+          </div>
+        </td>
+
+        {# 狀態 badge #}
+        <td class="px-4 py-2.5 text-center">{{ status_badge(s) }}</td>
+
+        {# SMS 評分 #}
+        <td class="px-4 py-2.5 text-center text-sm">{{ sms_chip(s.sms) }}</td>
+
+        {# 外資 / 投信連買賣 #}
+        <td class="px-4 py-2.5 text-center text-xs">
+          <div class="space-y-0.5">
+            <div>外資 {% if s.f_streak > 0 %}<span class="text-red-400 font-semibold">買+{{ s.f_streak }}天</span>
+                       {% elif s.f_streak < 0 %}<span class="text-green-500">賣{{ s.f_streak }}天</span>
+                       {% else %}<span class="text-slate-300">持平</span>{% endif %}
+            </div>
+            <div>投信 {% if s.it_streak > 0 %}<span class="text-red-400 font-semibold">買+{{ s.it_streak }}天</span>
+                       {% elif s.it_streak < 0 %}<span class="text-green-500">賣{{ s.it_streak }}天</span>
+                       {% else %}<span class="text-slate-300">持平</span>{% endif %}
+            </div>
+          </div>
+          {% if s.f_cost > 0 %}
+          <div class="text-[10px] text-slate-400 mt-0.5">
+            外資成本 {{ s.f_cost }}
+            {% set fg = ((s.price / s.f_cost - 1) * 100) | round(1) %}
+            <span class="{% if fg > 0 %}text-red-300{% else %}text-green-400{% endif %}">({% if fg > 0 %}+{% endif %}{{ fg }}%)</span>
+          </div>
+          {% endif %}
+        </td>
+
+        {# 法人對決 #}
+        <td class="px-4 py-2.5 text-center">{{ battle_badge(s.battle) }}</td>
+
+        {# 技術 #}
+        <td class="px-4 py-2.5 text-center text-[11px]">
+          {% if s.is_aligned %}
+            <span class="text-green-600 font-semibold">🟢 多頭</span>
+          {% elif s.is_bearish %}
+            <span class="text-red-400 font-semibold">🔴 空頭</span>
+          {% else %}
+            <span class="text-slate-400">—</span>
+          {% endif %}
+          {% if s.conc_delta > 0.5 %}
+            <div class="text-[10px] text-red-400 mt-0.5">籌碼↑</div>
+          {% elif s.conc_delta < -0.5 %}
+            <div class="text-[10px] text-green-500 mt-0.5">籌碼↓</div>
+          {% endif %}
+        </td>
+
+        {# 信號標籤 #}
+        <td class="px-4 py-2.5">
+          <div class="flex flex-wrap gap-1">
+            {% for t in s.entry_tags %}
+              <span class="tag tag-blue text-[10px]">{{ t }}</span>
+            {% endfor %}
+            {% for w in s.exit_warnings %}
+              <span class="tag tag-red text-[10px]">⚠ {{ w }}</span>
+            {% endfor %}
+          </div>
+        </td>
+
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ── 手機版卡片 ─────────────────────────────────────────── #}
+<div class="sm:hidden divide-y divide-slate-100">
+  {% for s in stocks %}
+  <div data-all-row data-sid="{{ s.sid }}" data-name="{{ s.name }}"
+       class="p-3.5 {% if s.status == 'exit' %}bg-red-50/40{% endif %}">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold text-slate-800">{{ s.name }}</span>
+          <span class="text-[11px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{{ s.sid }}</span>
+          {{ status_badge(s) }}
+        </div>
+        <div class="flex flex-wrap gap-1 mt-1">
+          {% for t in s.entry_tags %}<span class="tag tag-blue text-[10px]">{{ t }}</span>{% endfor %}
+          {% for w in s.exit_warnings %}<span class="tag tag-red text-[10px]">⚠ {{ w }}</span>{% endfor %}
+        </div>
+      </div>
+      <div class="text-right shrink-0">
+        <div class="text-lg font-extrabold
+                    {% if s.price_chg > 0 %}text-red-500{% elif s.price_chg < 0 %}text-green-600{% else %}text-slate-700{% endif %}">
+          {{ s.price }}
+        </div>
+        <div class="text-[11px] {% if s.price_chg > 0 %}text-red-400{% elif s.price_chg < 0 %}text-green-500{% else %}text-slate-400{% endif %}">
+          {% if s.price_chg > 0 %}▲+{% elif s.price_chg < 0 %}▼{% endif %}{{ s.price_chg }}%
+        </div>
+        <div class="text-xs mt-0.5">SMS {{ sms_chip(s.sms) }}</div>
+      </div>
+    </div>
+    <div class="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
+      {{ battle_badge(s.battle) }}
+      <span>外資 {% if s.f_streak > 0 %}<span class="text-red-400">+{{ s.f_streak }}天</span>{% elif s.f_streak < 0 %}<span class="text-green-500">{{ s.f_streak }}天</span>{% else %}—{% endif %}</span>
+      <span>投信 {% if s.it_streak > 0 %}<span class="text-red-400">+{{ s.it_streak }}天</span>{% elif s.it_streak < 0 %}<span class="text-green-500">{{ s.it_streak }}天</span>{% else %}—{% endif %}</span>
+      {% if s.is_aligned %}<span class="text-green-600">🟢多頭</span>{% elif s.is_bearish %}<span class="text-red-400">🔴空頭</span>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="px-4 py-8 text-center text-slate-400 text-sm">
+  無法取得股票資料，請確認資料庫連線
+</div>
+{% endif %}
+
+<script>
+function filterAllStocks(q) {
+  const rows   = document.querySelectorAll('[data-all-row]');
+  const lq     = q.trim().toLowerCase();
+  let   visible = 0;
+
+  rows.forEach(function(el) {
+    const sid  = (el.dataset.sid  || '').toLowerCase();
+    const name = (el.dataset.name || '').toLowerCase();
+    const show = !lq || sid.includes(lq) || name.includes(lq);
+    el.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  // 更新計數提示
+  const hint  = document.getElementById('all-filter-hint');
+  const cnt   = document.getElementById('all-visible-count');
+  const clrBtn = document.getElementById('all-search-clear');
+  if (hint && cnt) {
+    if (lq) {
+      cnt.textContent = visible;
+      hint.classList.remove('hidden');
+    } else {
+      hint.classList.add('hidden');
+    }
+  }
+  if (clrBtn) clrBtn.classList.toggle('hidden', !lq);
+}
+
+function clearAllSearch() {
+  const inp = document.getElementById('all-search-input');
+  if (inp) { inp.value = ''; filterAllStocks(''); inp.focus(); }
+}
+</script>

@@ -1,0 +1,73 @@
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+     x-data="{ selected: '{{ sectors[0] if sectors else '' }}' }">
+
+  <!-- 橫向強度條（點族群切換下方卡片） -->
+  <div class="p-4">
+    <div class="space-y-2">
+      {% for row in heatmap_rows %}
+      {% set pct = ((row.strength + 5) / 10 * 100) | round(0) | int %}
+      {% set pct = [0, [100, pct] | min] | max %}
+      <div class="flex items-center gap-3 cursor-pointer group"
+           @click="selected = '{{ row.sector }}'">
+        <div class="w-24 sm:w-32 text-xs text-slate-600 truncate group-hover:text-primary transition shrink-0"
+             :class="selected === '{{ row.sector }}' ? 'font-bold text-primary' : ''">
+          {{ row.sector }}
+        </div>
+        <div class="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+          <div class="h-full rounded-full transition-all"
+               style="width: {{ pct }}%;
+                      background: {% if row.strength > 1 %}#2563eb{% elif row.strength > 0 %}#60a5fa{% elif row.strength > -1 %}#fca5a5{% else %}#ef4444{% endif %};">
+          </div>
+        </div>
+        <div class="text-xs font-mono w-14 text-right shrink-0
+                    {% if row.strength > 0 %}text-primary{% else %}text-up{% endif %}">
+          {% if row.strength > 0 %}+{% endif %}{{ "%.2f" | format(row.strength) }}%
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 族群個股卡片 -->
+  {% for sector, stocks in sector_details.items() %}
+  <div x-show="selected === '{{ sector }}'" x-cloak class="border-t border-slate-100">
+    <div class="px-4 py-3 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+      {{ sector }} 族群
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
+      {% for s in stocks %}
+      <div class="bg-white border border-slate-100 rounded-xl p-3 shadow-sm">
+        <div class="flex justify-between items-start mb-2">
+          <div>
+            <div class="font-semibold text-sm text-slate-800 truncate max-w-[80px]">{{ s.name }}</div>
+            <div class="text-xs text-slate-400">{{ s.sid }}</div>
+          </div>
+          <div class="text-right">
+            <div class="font-bold text-sm text-slate-800">{{ s.price }}</div>
+            <div class="text-xs font-semibold
+                        {% if s.change > 0 %}text-up{% elif s.change < 0 %}text-down{% else %}text-slate-400{% endif %}">
+              {% if s.change > 0 %}+{% endif %}{{ "%.2f" | format(s.change) }}%
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-1 text-xs pt-2 border-t border-slate-50">
+          <div>
+            <span class="text-slate-400">外資</span>
+            <span class="ml-1 font-semibold {% if s.f_net > 0 %}text-up{% elif s.f_net < 0 %}text-down{% else %}text-slate-400{% endif %}">
+              {% if s.f_net > 0 %}+{% endif %}{{ s.f_net }}張
+            </span>
+          </div>
+          <div>
+            <span class="text-slate-400">投信</span>
+            <span class="ml-1 font-semibold {% if s.it_net > 0 %}text-up{% elif s.it_net < 0 %}text-down{% else %}text-slate-400{% endif %}">
+              {% if s.it_net > 0 %}+{% endif %}{{ s.it_net }}張
+            </span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+</div>

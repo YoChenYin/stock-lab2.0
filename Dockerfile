@@ -1,8 +1,7 @@
 FROM python:3.11-slim
 LABEL "language"="python"
-LABEL "framework"="streamlit"
+LABEL "framework"="fastapi"
 
-# Flush Python stdout/stderr immediately — required to see runtime logs
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
@@ -14,5 +13,4 @@ COPY . .
 
 EXPOSE 8080
 
-# Use $PORT from Zeabur (defaults to 8080 if not set)
-CMD ["sh", "-c", "streamlit run main.py --server.port=${PORT:-8080} --server.address=0.0.0.0"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080}"]
