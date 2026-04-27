@@ -28,8 +28,12 @@ def _make_ttl_cache(fn, ttl: int = 3600):
 
 def _cache(fn):
     return _make_ttl_cache(fn, ttl=3600)
-CHIP_DB        = Path(__file__).resolve().parents[2] / "chip_module" / "chip.db"
-UNIVERSE_JSON  = Path(__file__).resolve().parents[2] / "chip_module" / "us_universe.json"
+
+
+import os as _os
+_DATA_DIR     = "/data" if _os.path.isdir("/data") else str(Path(__file__).resolve().parents[2] / "chip_module")
+CHIP_DB       = Path(_DATA_DIR) / "chip.db"
+UNIVERSE_JSON = Path(__file__).resolve().parents[2] / "chip_module" / "us_universe.json"
 
 SCORE_COLS = [
     "insider_score", "short_score", "volume_score",

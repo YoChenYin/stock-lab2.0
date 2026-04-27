@@ -7,8 +7,8 @@ import os
 import sqlite3
 from pathlib import Path
 
-# 支援 env var，方便 Zeabur Persistent Volume 掛載到統一路徑
-DB_PATH = Path(os.environ.get("CHIP_DB_PATH", Path(__file__).parent.parent / "chip.db"))
+_DATA_DIR = "/data" if os.path.isdir("/data") else str(Path(__file__).parent.parent)
+DB_PATH = Path(os.environ.get("CHIP_DB_PATH", Path(_DATA_DIR) / "chip.db"))
 
 
 def get_conn(db_path: Path = DB_PATH) -> sqlite3.Connection:
