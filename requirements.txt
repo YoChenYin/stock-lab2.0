@@ -22,3 +22,4 @@ urllib3==2.3.0
 
 # ── Utilities ──
 pytz==2025.2
+tqdm
