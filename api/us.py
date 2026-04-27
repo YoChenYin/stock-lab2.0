@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from tabs.chip_radar._db import (
     load_latest_scores, load_market_pulse, load_universe,
-    load_latest_prices, load_institutional_holders,
+    load_institutional_holders,
     COMPOSITE_KEY, load_insider_trades, load_options_flow, load_large_holders,
     load_market_env, load_tech_signals, load_tech_signal, load_factor_max,
 )

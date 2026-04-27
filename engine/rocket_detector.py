@@ -66,31 +66,3 @@ def detect_coiling(df: pd.DataFrame, lookback: int = 20) -> dict:
     }
 
 
-def detect_breakout(df: pd.DataFrame) -> dict:
-    """
-    Detect close-above-resistance + volume-surge breakout.
-
-    Returns:
-      is_breakout  bool
-      resistance   float — 20-day high (excluding today)
-      vol_ratio    float — today's volume / 20d average
-      label        display string
-    """
-    if len(df) < 21:
-        return {"is_breakout": False, "label": "資料不足", "resistance": 0, "vol_ratio": 0}
-
-    hc    = _high_col(df)
-    today = df.iloc[-1]
-    last20 = df.tail(20)
-
-    resistance = last20[hc].iloc[:-1].max()
-    avg_vol    = last20["trading_volume"].iloc[:-1].mean()
-    broke_out  = today["close"] > resistance
-    vol_surge  = today["trading_volume"] > avg_vol * 1.5
-
-    return {
-        "is_breakout": broke_out and vol_surge,
-        "resistance":  round(resistance, 2),
-        "vol_ratio":   round(today["trading_volume"] / (avg_vol + 1e-9), 2),
-        "label": "🚀 突破確認！" if (broke_out and vol_surge) else "⏳ 等待突破",
-    }

@@ -94,26 +94,3 @@ def calc_revenue_accel_score(rev: pd.DataFrame) -> dict:
     }
 
 
-def build_broker_dna(engine, stock_ids: list, top_n: int = 10) -> pd.DataFrame:
-    """
-    Cross-stock broker fingerprint analysis.
-    Find brokers that appear before rallies across multiple stocks → market-maker DNA.
-
-    Returns DataFrame: [分點, 覆蓋股票數, 股票列表]
-    """
-    broker_record: dict[str, set] = {}
-
-    for sid in stock_ids:
-        insights = engine.fetch_broker_tracking(sid)
-        for insight in insights:
-            for broker in insight["top_buyers"].keys():
-                broker_record.setdefault(broker, set()).add(sid)
-
-    rows = [
-        {"分點": b, "覆蓋股票數": len(sids), "股票列表": ", ".join(sorted(sids))}
-        for b, sids in broker_record.items()
-        if len(sids) >= 2
-    ]
-    if not rows:
-        return pd.DataFrame()
-    return pd.DataFrame(rows).sort_values("覆蓋股票數", ascending=False).head(top_n)

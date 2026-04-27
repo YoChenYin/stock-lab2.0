@@ -7,26 +7,9 @@ from pathlib import Path
 import functools
 import time
 
-try:
-    import streamlit as st
-    _HAS_ST = True
-except ImportError:
-    _HAS_ST = False
-
-
-def _is_streamlit() -> bool:
-    """True 只在 Streamlit script run context 內（非 FastAPI）"""
-    if not _HAS_ST:
-        return False
-    try:
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-        return get_script_run_ctx() is not None
-    except Exception:
-        return False
-
 
 def _make_ttl_cache(fn, ttl: int = 3600):
-    """Process-level TTL dict cache — works in FastAPI and Streamlit bare mode"""
+    """Process-level TTL dict cache (1h default)"""
     _store: dict = {}
 
     @functools.wraps(fn)
@@ -39,17 +22,11 @@ def _make_ttl_cache(fn, ttl: int = 3600):
         _store[key] = (result, now)
         return result
 
-    wrapper._cache_store = _store   # allow manual invalidation if needed
+    wrapper._cache_store = _store
     return wrapper
 
 
 def _cache(fn):
-    """
-    Streamlit context  → st.cache_data(ttl=3600)
-    FastAPI / bare     → process-level TTL dict cache (no ScriptRunContext warning)
-    """
-    if _HAS_ST and _is_streamlit():
-        return st.cache_data(ttl=3600)(fn)
     return _make_ttl_cache(fn, ttl=3600)
 CHIP_DB        = Path(__file__).resolve().parents[2] / "chip_module" / "chip.db"
 UNIVERSE_JSON  = Path(__file__).resolve().parents[2] / "chip_module" / "us_universe.json"
@@ -224,18 +201,6 @@ def load_latest_scores(as_of: str = None) -> pd.DataFrame:
 
 
 @_cache
-def load_score_history(ticker: str, days: int = 60) -> pd.DataFrame:
-    conn = get_conn()
-    df = pd.read_sql("""
-        SELECT * FROM chip_scores
-        WHERE ticker=?
-        ORDER BY date DESC LIMIT ?
-    """, conn, params=(ticker, days))
-    conn.close()
-    return df.sort_values("date")
-
-
-@_cache
 def load_insider_trades(ticker: str) -> pd.DataFrame:
     conn = get_conn()
     df = pd.read_sql("""
@@ -316,37 +281,6 @@ def load_institutional_holders(ticker: str) -> list:
             "shares_M":    round((shares_held or 0) / 1e6, 1),
             "value_B":     round((value_usd  or 0) / 1e9, 2),
         })
-    return result
-
-
-def load_latest_prices() -> dict:
-    """
-    每支股票最新兩天收盤價，計算漲跌幅。
-    回傳 {ticker: {"price": float, "price_chg": float}}
-    """
-    conn = get_conn()
-    rows = conn.execute("""
-        SELECT ticker, date, close
-        FROM (
-            SELECT ticker, date, close,
-                   ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn
-            FROM daily_prices
-        )
-        WHERE rn <= 2
-        ORDER BY ticker, date DESC
-    """).fetchall()
-    conn.close()
-
-    from collections import defaultdict
-    by_ticker = defaultdict(list)
-    for ticker, _, close in rows:
-        by_ticker[ticker].append(close)
-
-    result = {}
-    for ticker, closes in by_ticker.items():
-        price = round(closes[0], 2)
-        price_chg = round((closes[0] / closes[1] - 1) * 100, 2) if len(closes) > 1 else 0.0
-        result[ticker] = {"price": price, "price_chg": price_chg}
     return result
 
 
