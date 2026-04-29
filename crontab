@@ -1,2 +1,2 @@
-30 15 * * 1-5 root cd /app && python -m chip_module.fetch_daily >> /data/cron.log 2>&1
+30 15 * * 1-5 root cd /app && python3 -m chip_module.fetch_daily >> /data/cron.log 2>&1
 
