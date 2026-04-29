@@ -13,6 +13,7 @@ Factor MAX 引擎
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
@@ -20,8 +21,9 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-CHIP_DB    = Path(__file__).resolve().parents[2] / "chip_module" / "chip.db"
-FINMIND_DB = Path(__file__).resolve().parents[2] / "finmind_cache.db"
+_DATA_DIR  = Path("/data") if os.path.isdir("/data") else Path(__file__).resolve().parents[2]
+CHIP_DB    = _DATA_DIR / "chip.db"
+FINMIND_DB = _DATA_DIR / "finmind_cache.db"
 
 # ── US Factor Group 定義 ──────────────────────────────────────────────
 # score-based: (label, score_col, threshold)
