@@ -9,7 +9,6 @@ chip_module/fetch_daily.py
 import argparse
 import logging
 import json
-import os
 import re
 from pathlib import Path
 from datetime import datetime
@@ -27,6 +26,7 @@ from .signals.composite import run as calc_scores
 from .signals.technical_signal import run as calc_tech_signals
 from .fetchers.market_env import fetch_market_env
 from .signals.factor_max import run as calc_factor_max
+from .fetchers.tw_prefetch import run as prefetch_tw
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,6 +110,10 @@ def run(tickers: list, skip_institutional: bool = False):
     # 12. Factor MAX（因子組合動能）
     log.info("Step +: Factor MAX")
     calc_factor_max()
+
+    # 13. 台股資料預抓（暖機 finmind_cache.db）
+    log.info("Step +: 台股資料預抓")
+    prefetch_tw()
 
     elapsed = (datetime.now() - start_time).seconds
     log.info(f"=== 更新完成，耗時 {elapsed}s ===")
