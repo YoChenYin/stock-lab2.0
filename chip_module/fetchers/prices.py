@@ -5,19 +5,23 @@ chip_module/fetchers/prices.py
 """
 
 import time
-import sqlite3
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import date, timedelta
 from typing import List
 from tqdm import tqdm
 
 from ..db.schema import get_conn
 
-BATCH_SIZE  = 50   # 每批下載的 ticker 數
-BATCH_SLEEP = 3    # 批次之間等待秒數
-RETRY_WAITS = [10, 30, 60]  # rate limit 時依序等待的秒數
+# 避免多 process 同時寫 TzCache 造成 [Errno 17]
+yf.set_tz_cache_location("/tmp/yfinance_cache")
+
+BATCH_SIZE    = 50   # 每批下載的 ticker 數
+BATCH_SLEEP   = 3    # 批次之間等待秒數
+RETRY_WAITS   = [10, 30, 60]  # rate limit 時依序等待的秒數
+DOWNLOAD_TIMEOUT = 120  # 單批最長等待秒數
 
 
 # ── 技術指標計算 ──────────────────────────────────────────────────
@@ -45,14 +49,19 @@ def calc_mfi(high, low, close, volume, period=14) -> pd.Series:
 # ── 批次下載 ──────────────────────────────────────────────────────
 
 def _download_batch(batch: List[str], start: str) -> pd.DataFrame:
-    """批次下載，rate limit 時自動 retry。"""
+    """批次下載，rate limit 時自動 retry，超過 DOWNLOAD_TIMEOUT 秒視為 hang 直接跳過。"""
     for attempt, wait in enumerate([0] + RETRY_WAITS):
         if wait:
             print(f"[prices] rate limited，{wait}s 後重試 (attempt {attempt})...")
             time.sleep(wait)
         try:
-            raw = yf.download(batch, start=start, progress=False, auto_adjust=True)
-            return raw
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(yf.download, batch,
+                                   start=start, progress=False, auto_adjust=True)
+                return future.result(timeout=DOWNLOAD_TIMEOUT)
+        except FuturesTimeout:
+            print(f"[prices] batch timeout ({DOWNLOAD_TIMEOUT}s)，跳過本批")
+            return pd.DataFrame()
         except Exception as e:
             if "RateLimit" in type(e).__name__ and attempt < len(RETRY_WAITS):
                 continue

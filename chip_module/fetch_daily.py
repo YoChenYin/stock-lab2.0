@@ -10,8 +10,11 @@ import argparse
 import logging
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
+
+_VALID_TICKER = re.compile(r'^[A-Z]{1,5}$')
 
 from .db.schema import init_db
 from .fetchers.prices import fetch_prices, fetch_institutional
@@ -47,8 +50,8 @@ def load_watchlist_from_json():
         with open(json_path, "r", encoding="utf-8") as f:
             universe_data = json.load(f)
             # 取得所有 Key (Ticker)，並轉換成清單
-            watchlist = list(universe_data.keys())
-            log.info(f"成功從 {json_path} 載入 {len(watchlist)} 個標的")
+            watchlist = [t for t in universe_data if _VALID_TICKER.match(t)]
+            log.info(f"成功從 {json_path} 載入 {len(watchlist)} 個標的（已過濾 warrant/unit）")
             return watchlist
     except Exception as e:
         log.error(f"讀取 JSON 時發生錯誤: {e}")
