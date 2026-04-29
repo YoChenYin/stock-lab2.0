@@ -29,7 +29,7 @@ NASDAQ_LISTED_URL = (
     "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
 )
 OUT_PATH = Path(__file__).parent / "us_universe.json"
-MIN_MONTHLY_VOLUME = 10_000   # 近一個月總交易量門檻
+MIN_MONTHLY_VOLUME = 5_000_000   # 近一個月總交易量門檻（約 25 萬股/日）
 
 # 已知概念分類（供 build_universe 覆寫 sector）
 CONCEPT_MAP: dict[str, str] = {
