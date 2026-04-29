@@ -17,6 +17,7 @@ chip_module/build_universe.py
 
 import argparse
 import json
+import re
 import time
 import requests
 import pandas as pd
@@ -56,14 +57,17 @@ CONCEPT_MAP: dict[str, str] = {
 }
 
 
+_SPECIAL_KEYWORDS = re.compile(
+    r'\b(warrant|warrants|unit|units|right|rights)\b', re.IGNORECASE
+)
+
+
 def _fetch_nasdaq_tickers() -> list[str]:
-    """下載納斯達克上市股票，過濾 ETF / warrant / 非標準 ticker"""
+    """下載納斯達克上市股票，過濾 ETF / warrant / unit / rights"""
     print("Downloading Nasdaq listed stocks...")
     r = requests.get(NASDAQ_LISTED_URL, timeout=30)
     r.raise_for_status()
-    # 格式：Symbol|Security Name|Market Category|...|ETF|...|File Creation Time
     df = pd.read_csv(StringIO(r.text), sep="|")
-    # 最後一行是 File Creation Time，不是真正的資料
     df = df[df["Symbol"].notna()]
     df = df[~df["Symbol"].str.startswith("File Creation")]
 
@@ -74,36 +78,54 @@ def _fetch_nasdaq_tickers() -> list[str]:
     # 過濾非標準 ticker（含特殊字元、長度 > 5）
     df = df[df["Symbol"].str.match(r"^[A-Z]{1,5}$", na=False)]
 
+    # 用 Security Name 過濾 warrant / unit / rights（比 ticker suffix 更準確）
+    if "Security Name" in df.columns:
+        is_special = df["Security Name"].str.contains(_SPECIAL_KEYWORDS, na=False)
+        before = len(df)
+        df = df[~is_special]
+        print(f"  → removed {before - len(df)} warrant/unit/rights by name")
+
     tickers = sorted(df["Symbol"].unique().tolist())
-    print(f"  → {len(tickers)} tickers after ETF/warrant filter")
+    print(f"  → {len(tickers)} tickers after filter")
     return tickers
 
 
+_RETRY_WAITS = [5, 15, 45]
+
+
 def _batch_volume(tickers: list[str], period: str = "1mo") -> dict[str, int]:
-    """批次下載近 1 個月成交量，回傳 {ticker: total_volume}"""
+    """批次下載近 1 個月成交量，rate limit 時自動 retry。"""
     print(f"Downloading {len(tickers)} tickers volume ({period})...")
-    batch_size = 200
+    batch_size = 50
     vol_map: dict[str, int] = {}
 
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i:i + batch_size]
-        try:
-            data = yf.download(batch, period=period, progress=False,
-                               auto_adjust=True, threads=True)
-            if data.empty:
-                continue
-            vol = data["Volume"] if "Volume" in data.columns else data[("Volume",)]
-            if isinstance(vol.columns, pd.MultiIndex):
-                vol.columns = [c[0] if isinstance(c, tuple) else c for c in vol.columns]
-            for t in batch:
-                if t in vol.columns:
-                    total = int(vol[t].dropna().sum())
-                    vol_map[t] = total
-        except Exception as e:
-            print(f"  batch {i}-{i+batch_size} error: {e}")
-        time.sleep(0.5)
-        if i % 1000 == 0 and i > 0:
-            print(f"  processed {i}/{len(tickers)}")
+
+        for attempt, wait in enumerate([0] + _RETRY_WAITS):
+            if wait:
+                print(f"  rate limited, retry in {wait}s (attempt {attempt})...")
+                time.sleep(wait)
+            try:
+                data = yf.download(batch, period=period, progress=False,
+                                   auto_adjust=True)
+                if not data.empty:
+                    vol = data["Volume"] if "Volume" in data.columns else data[("Volume",)]
+                    if isinstance(vol.columns, pd.MultiIndex):
+                        vol.columns = [c[0] if isinstance(c, tuple) else c for c in vol.columns]
+                    for t in batch:
+                        if t in vol.columns:
+                            vol_map[t] = int(vol[t].dropna().sum())
+                break
+            except Exception as e:
+                if "RateLimit" in type(e).__name__ and attempt < len(_RETRY_WAITS):
+                    continue
+                print(f"  batch {i} error: {e}")
+                break
+
+        time.sleep(3)
+        if (i // batch_size) % 10 == 9:
+            print(f"  processed {i + batch_size}/{len(tickers)}, got {len(vol_map)} so far")
 
     return vol_map
 
