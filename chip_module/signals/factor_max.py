@@ -21,9 +21,13 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-_DATA_DIR  = Path("/data") if os.path.isdir("/data") else Path(__file__).resolve().parents[2]
-CHIP_DB    = _DATA_DIR / "chip.db"
-FINMIND_DB = _DATA_DIR / "finmind_cache.db"
+_PROJ_ROOT = Path(__file__).resolve().parents[2]  # stock_lab2.0/
+if os.path.isdir("/data"):
+    CHIP_DB    = Path("/data/chip.db")
+    FINMIND_DB = Path("/data/finmind_cache.db")
+else:
+    CHIP_DB    = _PROJ_ROOT / "chip_module" / "chip.db"
+    FINMIND_DB = _PROJ_ROOT / "finmind_cache.db"
 
 # ── US Factor Group 定義 ──────────────────────────────────────────────
 # score-based: (label, score_col, threshold)
@@ -114,8 +118,8 @@ def _build_factor_record(fname: str, label: str, portfolio: pd.Series,
     avg_ret   = float(portfolio.mean())
     days_ago  = (date.today() - date.fromisoformat(max_date[:10])).days
 
-    recency     = max(0.0, 1.0 - days_ago / 20)
-    # momentum_score: max_ret scaled 0-100, weighted by recency
+    # 20 trading days ≈ 28 calendar days; use calendar-day denominator
+    recency        = max(0.0, 1.0 - days_ago / 28)
     momentum_score = round(min(100.0, max(0.0, max_ret * 8)) * recency, 1)
 
     # individual stock lottery detection: stock-level MAX ret in last 5 days
@@ -196,11 +200,11 @@ def compute_us_factor_max(days: int = 20) -> list[dict]:
 def _load_tw_prices_from_cache() -> pd.DataFrame:
     """
     從 finmind_cache.db 讀取所有 daily 快照，重建價格時間序列。
-    每一筆 cache row 是某支股票某天的 OHLCV 快照（dict 格式）。
+    content 格式為 pandas orient='dict'：{column: {index: value}}
     """
     if not FINMIND_DB.exists():
         return pd.DataFrame()
-    rows_list = []
+    frames = []
     with sqlite3.connect(FINMIND_DB) as conn:
         rows = conn.execute(
             "SELECT sid, content FROM api_cache WHERE data_type='daily'"
@@ -208,26 +212,18 @@ def _load_tw_prices_from_cache() -> pd.DataFrame:
     for sid, content in rows:
         try:
             data = json.loads(content)
-            if isinstance(data, dict) and "close" in data:
-                # Single-record format
-                rows_list.append({
-                    "sid":   sid,
-                    "date":  data.get("date", ""),
-                    "close": float(data.get("close") or 0),
-                })
-            elif isinstance(data, list):
-                for rec in data:
-                    if "close" in rec:
-                        rows_list.append({
-                            "sid":   sid,
-                            "date":  rec.get("date", ""),
-                            "close": float(rec.get("close") or 0),
-                        })
+            if not isinstance(data, dict) or "close" not in data or "date" not in data:
+                continue
+            # pandas orient='dict' → reconstruct DataFrame
+            df = pd.DataFrame(data)[["date", "close"]].copy()
+            df["sid"]   = sid
+            df["close"] = pd.to_numeric(df["close"], errors="coerce")
+            frames.append(df[["sid", "date", "close"]])
         except Exception:
             continue
-    if not rows_list:
+    if not frames:
         return pd.DataFrame()
-    df = pd.DataFrame(rows_list)
+    df = pd.concat(frames, ignore_index=True)
     df = df[df["close"] > 0].copy()
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     return df.dropna(subset=["date"])
@@ -298,8 +294,8 @@ def compute_tw_factor_max(days: int = 20) -> list[dict]:
             net_by_sid = grp.groupby("sid")["net"].sum()
             return net_by_sid[net_by_sid > 0].index.tolist()
 
-        foreign_sids = _net_buyers("外資")
-        fund_sids    = _net_buyers("投信")
+        foreign_sids = _net_buyers("Foreign_Investor")
+        fund_sids    = _net_buyers("Investment_Trust")
         double_sids  = list(set(foreign_sids) & set(fund_sids))
 
         tw_groups = [

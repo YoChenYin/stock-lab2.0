@@ -22,6 +22,7 @@ from tabs.chip_radar._db import (
     load_institutional_holders,
     COMPOSITE_KEY, load_insider_trades, load_options_flow, load_large_holders,
     load_market_env, load_tech_signals, load_tech_signal, load_factor_max,
+    load_last_updated,
 )
 
 router = APIRouter()
@@ -563,13 +564,15 @@ def _load_us_all(timeframe: str = "波段 (1–4週)") -> list:
 
 @router.get("/", response_class=HTMLResponse)
 async def us_page(request: Request):
-    fetch_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    env = load_market_env()
+    fetch_time   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    env          = load_market_env()
+    last_updated = load_last_updated()
     return templates.TemplateResponse("us.html", {
-        "request":    request,
-        "fetch_time": fetch_time,
-        "timeframes": list(COMPOSITE_KEY.keys()),
-        "env":        env,
+        "request":      request,
+        "fetch_time":   fetch_time,
+        "timeframes":   list(COMPOSITE_KEY.keys()),
+        "env":          env,
+        "last_updated": last_updated,
     })
 
 
@@ -591,10 +594,11 @@ async def us_radar(request: Request, timeframe: str = "波段 (1–4週)"):
 
 @router.get("/factor-max", response_class=HTMLResponse)
 async def us_factor_max(request: Request):
-    factor_max_list = load_factor_max("US")
+    from chip_module.signals.factor_ranker import FactorRanker
+    heatmap = FactorRanker(market="US").fit().get_heatmap()
     return templates.TemplateResponse("partials/factor_heatmap.html", {
         "request":        request,
-        "factor_max_list": factor_max_list,
+        "factor_max_list": heatmap,
         "market":         "US",
     })
 

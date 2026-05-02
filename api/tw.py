@@ -567,23 +567,24 @@ def _get_heatmap_data():
 @router.get("/", response_class=HTMLResponse)
 async def tw_page(request: Request):
     """台股主頁面"""
-    fetch_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    from tabs.chip_radar._db import load_last_updated
+    fetch_time   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    last_updated = load_last_updated()
     return templates.TemplateResponse("tw.html", {
-        "request":    request,
-        "fetch_time": fetch_time,
+        "request":      request,
+        "fetch_time":   fetch_time,
+        "last_updated": last_updated,
     })
 
 
 @router.get("/factor-max", response_class=HTMLResponse)
 async def tw_factor_max(request: Request):
-    """HTMX: TW Factor MAX 熱度榜"""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-    from tabs.chip_radar._db import load_factor_max
-    factor_max_list = load_factor_max("TW")
+    """HTMX: TW Factor MAX 熱度榜（FactorRanker 多因子引擎）"""
+    from chip_module.signals.factor_ranker import FactorRanker
+    heatmap = FactorRanker(market="TW").fit().get_heatmap()
     return templates.TemplateResponse("partials/factor_heatmap.html", {
         "request":         request,
-        "factor_max_list": factor_max_list,
+        "factor_max_list": heatmap,
         "market":          "TW",
     })
 

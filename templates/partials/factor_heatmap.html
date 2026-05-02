@@ -1,37 +1,47 @@
 {% if factor_max_list %}
 
-{# ── 信號說明工具提示 #}
-{# momentum_score 0-100：max_ret 強度 × 近期性 #}
+{# 組別標籤定義 #}
+{% set group_badge = {
+  "technical": {"label": "技術", "cls": "bg-blue-50 text-blue-600 border-blue-100"},
+  "flow":      {"label": "籌碼", "cls": "bg-green-50 text-green-700 border-green-100"},
+  "quality":   {"label": "品質", "cls": "bg-amber-50 text-amber-700 border-amber-100"},
+  "composite": {"label": "綜合", "cls": "bg-purple-50 text-purple-700 border-purple-100"},
+  "market":    {"label": "市場", "cls": "bg-slate-100 text-slate-500 border-slate-200"},
+} %}
 
 <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead>
       <tr class="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs uppercase tracking-wide">
         <th class="px-4 py-3 text-left">因子組合</th>
-        <th class="px-4 py-3 text-center w-28" title="因子投資組合在過去20日的單日最大報酬">MAX 報酬</th>
-        <th class="px-4 py-3 text-center w-24" title="達到 MAX 的日期">發生時間</th>
-        <th class="px-4 py-3 text-center w-24" title="近20日平均日報酬">20日均報</th>
-        <th class="px-4 py-3 text-center w-28" title="MAX強度 × 近期性，越高越值得關注">動能分</th>
-        <th class="px-4 py-3 text-left">MAX當日領漲股</th>
-        <th class="px-4 py-3 text-left">個股過熱⚠</th>
+        <th class="px-4 py-3 text-center w-20" title="組別：技術 / 籌碼 / 品質 / 綜合">組別</th>
+        <th class="px-4 py-3 text-center w-24" title="組內最高進場分（VIX 折扣後，0-100）">最高分</th>
+        <th class="px-4 py-3 text-center w-24" title="組內平均進場分">均分</th>
+        <th class="px-4 py-3 text-center w-28" title="組平均 vs 全市場橫截面 Z-Score，0-100">動能分</th>
+        <th class="px-4 py-3 text-left">領先個股</th>
+        <th class="px-4 py-3 text-center w-20" title="VIX 環境折扣係數">VIX 折扣</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-50">
+
       {% for f in factor_max_list %}
-      {% set score = f.momentum_score | round(0) | int %}
-      {% set is_hot = f.days_ago is not none and f.days_ago <= 5 and f.max_ret is not none and f.max_ret >= 2 %}
-      {% set is_warm = f.days_ago is not none and f.days_ago <= 10 and f.max_ret is not none and f.max_ret >= 1 %}
+      {% set score  = f.momentum_score | round(0) | int %}
+      {% set is_hot  = score >= 65 %}
+      {% set is_warm = score >= 55 and not is_hot %}
+      {% set grp    = f.group | default("market") %}
+      {% set badge  = group_badge.get(grp, group_badge["market"]) %}
+
       <tr class="{% if is_hot %}bg-amber-50/40{% endif %} hover:bg-blue-50/30 transition">
 
-        {# 因子名稱 + 信號標籤 #}
+        {# 因子名稱 + 熱度圖示 #}
         <td class="px-4 py-3">
           <div class="flex items-center gap-2">
             {% if is_hot %}
-              <span class="text-base">🔥</span>
+              <span class="text-base" title="動能爆發">🔥</span>
             {% elif is_warm %}
-              <span class="text-base">🌡</span>
+              <span class="text-base" title="動能升溫">🌡</span>
             {% else %}
-              <span class="text-base">❄</span>
+              <span class="text-base" title="動能冷卻">❄</span>
             {% endif %}
             <div>
               <div class="font-semibold text-slate-800">{{ f.factor_label }}</div>
@@ -40,38 +50,34 @@
           </div>
         </td>
 
-        {# MAX 報酬 #}
+        {# 組別 badge #}
         <td class="px-4 py-3 text-center">
-          {% if f.max_ret is not none %}
+          <span class="text-[10px] font-semibold border rounded px-1.5 py-0.5 {{ badge.cls }}">
+            {{ badge.label }}
+          </span>
+        </td>
+
+        {# 最高分 #}
+        <td class="px-4 py-3 text-center">
+          {% if f.max_score is defined %}
           <span class="font-bold text-sm
-            {% if f.max_ret >= 4 %}text-red-500
-            {% elif f.max_ret >= 2 %}text-orange-500
-            {% elif f.max_ret >= 0 %}text-green-600
+            {% if f.max_score >= 70 %}text-red-500
+            {% elif f.max_score >= 60 %}text-orange-500
+            {% elif f.max_score >= 50 %}text-green-600
             {% else %}text-slate-400{% endif %}">
-            {% if f.max_ret >= 0 %}+{% endif %}{{ "%.2f" | format(f.max_ret) }}%
+            {{ "%.1f" | format(f.max_score) }}
           </span>
           {% else %}—{% endif %}
         </td>
 
-        {# 發生時間 #}
+        {# 均分 #}
         <td class="px-4 py-3 text-center">
-          {% if f.max_date %}
-          <div class="text-xs text-slate-700">{{ f.max_date }}</div>
-          <div class="text-[10px] text-slate-400">
-            {% if f.days_ago == 0 %}今日
-            {% elif f.days_ago == 1 %}昨日
-            {% elif f.days_ago <= 5 %}{{ f.days_ago }}天前
-            {% else %}{{ f.days_ago }}天前{% endif %}
-          </div>
-          {% else %}—{% endif %}
-        </td>
-
-        {# 20日均報 #}
-        <td class="px-4 py-3 text-center">
-          {% if f.avg_ret_20d is not none %}
+          {% if f.avg_score is defined %}
           <span class="text-xs font-mono
-            {% if f.avg_ret_20d >= 0.3 %}text-green-600{% elif f.avg_ret_20d >= 0 %}text-slate-600{% else %}text-red-500{% endif %}">
-            {% if f.avg_ret_20d >= 0 %}+{% endif %}{{ "%.2f" | format(f.avg_ret_20d) }}%
+            {% if f.avg_score >= 55 %}text-green-600
+            {% elif f.avg_score >= 45 %}text-slate-600
+            {% else %}text-red-500{% endif %}">
+            {{ "%.1f" | format(f.avg_score) }}
           </span>
           {% else %}—{% endif %}
         </td>
@@ -82,17 +88,23 @@
             <div class="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
               <div class="h-full rounded-full transition-all"
                    style="width:{{ score }}%;
-                          background:{% if score >= 70 %}#ef4444{% elif score >= 40 %}#f97316{% elif score >= 20 %}#eab308{% else %}#94a3b8{% endif %}">
+                          background:{% if score >= 70 %}#ef4444
+                          {% elif score >= 55 %}#f97316
+                          {% elif score >= 40 %}#eab308
+                          {% else %}#94a3b8{% endif %}">
               </div>
             </div>
             <span class="text-xs font-mono font-bold w-8 text-right
-              {% if score >= 70 %}text-red-500{% elif score >= 40 %}text-orange-500{% elif score >= 20 %}text-yellow-600{% else %}text-slate-400{% endif %}">
+              {% if score >= 70 %}text-red-500
+              {% elif score >= 55 %}text-orange-500
+              {% elif score >= 40 %}text-yellow-600
+              {% else %}text-slate-400{% endif %}">
               {{ score }}
             </span>
           </div>
         </td>
 
-        {# 領漲股 #}
+        {# 領先個股 #}
         <td class="px-4 py-3">
           <div class="flex flex-wrap gap-1">
             {% for t in f.top_stocks %}
@@ -101,34 +113,34 @@
           </div>
         </td>
 
-        {# 個股過熱 #}
-        <td class="px-4 py-3">
-          {% if f.lottery_stocks %}
-          <div class="flex flex-wrap gap-1">
-            {% for t in f.lottery_stocks %}
-            <span class="text-xs bg-red-50 text-red-500 border border-red-100 rounded px-1.5 py-0.5 font-mono font-semibold"
-                  title="近5日單日漲幅>5%，注意樂透反轉效應">{{ t }}</span>
-            {% endfor %}
-          </div>
-          {% else %}
-          <span class="text-slate-300 text-xs">—</span>
-          {% endif %}
+        {# VIX 折扣 #}
+        <td class="px-4 py-3 text-center">
+          {% set adj = f.vix_adj | default(1.0) %}
+          <span class="text-xs font-mono
+            {% if adj < 0.9 %}text-red-500 font-bold
+            {% elif adj < 1.0 %}text-amber-600
+            {% else %}text-green-600{% endif %}">
+            × {{ "%.2f" | format(adj) }}
+          </span>
         </td>
 
       </tr>
       {% endfor %}
+
     </tbody>
   </table>
 </div>
 
-<div class="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-400">
-  🔥 爆發（5日內 MAX≥2%）｜ 🌡 升溫（10日內 MAX≥1%）｜ ❄ 冷卻 ｜ ⚠ 個股過熱 = 因子持續但個股本身可能出現樂透反轉，謹慎追高
+<div class="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-400 flex flex-wrap gap-x-4">
+  <span>🔥 動能爆發（≥ 65）</span>
+  <span>🌡 動能升溫（≥ 55）</span>
+  <span>❄ 動能冷卻</span>
+  <span class="ml-auto">分數 = Technical×30% + 籌碼×50% + 品質×20%，VIX折扣後</span>
 </div>
 
 {% else %}
 <div class="px-4 py-8 text-center text-slate-400 text-sm">
   <div class="text-3xl mb-2">📊</div>
-  尚無 Factor MAX 資料，請先執行
-  <code class="bg-slate-100 px-2 py-0.5 rounded text-xs">python -m chip_module.fetch_daily</code>
+  尚無因子資料，請確認 finmind_cache.db 或 chip.db 已有資料
 </div>
 {% endif %}

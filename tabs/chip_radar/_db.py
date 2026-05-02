@@ -375,6 +375,40 @@ def load_factor_max(market: str = "US") -> list[dict]:
     return result
 
 
+def load_last_updated() -> dict:
+    """
+    回傳最後一次成功執行的時間資訊，供頁面顯示。
+    優先讀 run_log，fallback 讀 chip_scores.updated_at。
+    回傳 {"time": "2025-01-01 23:45", "status": "success"} 或 {}
+    """
+    try:
+        conn = get_conn()
+        row = conn.execute("""
+            SELECT finished_at, status FROM run_log
+            WHERE status IN ('success', 'partial')
+            ORDER BY run_date DESC LIMIT 1
+        """).fetchone()
+        conn.close()
+        if row:
+            ts = str(row["finished_at"])[:16].replace("T", " ")
+            return {"time": ts, "status": row["status"]}
+    except Exception:
+        pass
+    # fallback: chip_scores updated_at
+    try:
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT MAX(updated_at) AS ts FROM chip_scores"
+        ).fetchone()
+        conn.close()
+        if row and row["ts"]:
+            ts = str(row["ts"])[:16].replace("T", " ")
+            return {"time": ts, "status": "unknown"}
+    except Exception:
+        pass
+    return {}
+
+
 def load_universe() -> dict:
     """
     Load ticker universe from chip_module/us_universe.json.

@@ -254,6 +254,20 @@ def init_db(db_path: Path = DB_PATH):
         UNIQUE(date, market, factor_name)
     )""")
 
+    # ── 12. 每日執行紀錄 ─────────────────────────────────────────
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS run_log (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_date     TEXT    NOT NULL,
+        started_at   TEXT,
+        finished_at  TEXT,
+        status       TEXT,     -- 'success' | 'partial' | 'failed'
+        steps_ok     INTEGER   DEFAULT 0,
+        steps_fail   INTEGER   DEFAULT 0,
+        detail       TEXT,     -- JSON: {step: {ok, elapsed_s, error}}
+        UNIQUE(run_date)
+    )""")
+
     # ── 索引 ─────────────────────────────────────────────────────
     indexes = [
         "CREATE INDEX IF NOT EXISTS idx_prices_ticker_date   ON daily_prices(ticker, date DESC)",

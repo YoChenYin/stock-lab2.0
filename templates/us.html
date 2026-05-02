@@ -5,6 +5,21 @@
 
 {% block content %}
 
+{# ── 資料更新時間標籤 ──────────────────────────────────────────────── #}
+{% if last_updated %}
+<div class="flex justify-end mb-2">
+  <span class="inline-flex items-center gap-1.5 text-xs text-slate-400">
+    {% if last_updated.status == 'success' %}
+      <span class="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>資料更新：{{ last_updated.time }}
+    {% elif last_updated.status == 'partial' %}
+      <span class="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>部分更新：{{ last_updated.time }}
+    {% else %}
+      <span class="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block"></span>最後資料：{{ last_updated.time }}
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
 {# ── 市場行情總覽 ──────────────────────────────────────────────────── #}
 {% if env %}
 {% set vix = env.vix %}
@@ -91,16 +106,24 @@
 {# ─────────────────────────────────────────────────────────────────── #}
 
 {# ── Factor MAX 因子熱度榜 ─────────────────────────────────────────── #}
-<div x-data="{ open: false }" class="mb-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-  <button @click="open = !open; if(open && !$el.dataset.loaded) { htmx.ajax('GET', '/us/factor-max', {target: '#us-factor-max-area', swap: 'innerHTML'}); $el.dataset.loaded = '1' }"
+<div x-data="{ open: true }" class="mb-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <button @click="open = !open"
           class="w-full flex items-center justify-between px-4 py-3 text-left
                  font-semibold text-slate-700 hover:bg-slate-50 transition text-sm">
     <span>📊 因子熱度榜 <span class="text-xs font-normal text-slate-400 ml-1">Factor MAX — 因子層動能持續，個股層注意樂透反轉</span></span>
     <span x-text="open ? '▲' : '▼'" class="text-slate-400 text-sm shrink-0"></span>
   </button>
   <div x-show="open" x-cloak x-transition>
-    <div id="us-factor-max-area">
-      <div class="flex justify-center py-6 text-slate-300 text-xs">點擊展開載入...</div>
+    <div id="us-factor-max-area"
+         hx-get="/us/factor-max"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="flex justify-center py-6">
+        <svg class="animate-spin h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+      </div>
     </div>
   </div>
 </div>
@@ -251,10 +274,15 @@
 
   <!-- 全部 Results area -->
   <div x-show="tab === 'all'">
-    <div id="us-all-results">
-      <div class="p-6 text-center text-slate-400 text-sm">
-        <div class="text-3xl mb-2">📋</div>
-        點擊「全市場掃描」查看所有股票的目前狀態
+    <div id="us-all-results"
+         hx-post="/us/all-scan"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="flex justify-center py-8">
+        <svg class="animate-spin h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
       </div>
     </div>
   </div>
@@ -276,10 +304,15 @@
 
   <!-- 出場 area -->
   <div x-show="tab === 'exit'">
-    <div id="exit-area">
-      <div class="p-6 text-center text-slate-400 text-sm">
-        <div class="text-3xl mb-2">🛡️</div>
-        點擊「掃描警示」檢查持倉出場訊號
+    <div id="exit-area"
+         hx-get="/us/exit-scan"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="flex justify-center py-8">
+        <svg class="animate-spin h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
       </div>
     </div>
   </div>
