@@ -74,12 +74,13 @@ class DataCacheManager:
 
             # v2: clear corrupted institutional data (stored with single row per date
             #     due to the old dedup_keys=("date",) bug in _smart_fetch).
-            #     After this migration, _smart_fetch uses ("date","name") and re-fetches.
+            #     Also clear scan cache so stale empty results don't block fresh scans.
             ver = conn.execute(
                 "SELECT value FROM schema_version WHERE key='institutional_dedup_v2'"
             ).fetchone()
             if not ver:
                 conn.execute("DELETE FROM api_cache WHERE data_type='institutional'")
+                conn.execute(f"DELETE FROM {_SCAN_TABLE}")
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version VALUES ('institutional_dedup_v2', '1')"
                 )
@@ -133,7 +134,7 @@ class DataCacheManager:
     # ── scan cache CRUD ──────────────────────────────────────
 
     def get_scan(self, scan_type: str) -> list | None:
-        """Return today's pre-computed scan results or None."""
+        """Return today's pre-computed scan results, or None if missing/empty."""
         import json
         today = datetime.date.today().isoformat()
         with sqlite3.connect(self.db_path) as conn:
@@ -143,13 +144,16 @@ class DataCacheManager:
             ).fetchone()
         if row:
             try:
-                return json.loads(row[0])
+                result = json.loads(row[0])
+                return result if result else None  # treat [] as cache-miss → force re-scan
             except Exception:
                 return None
         return None
 
     def set_scan(self, scan_type: str, results: list):
-        """Store pre-computed scan results for today."""
+        """Store pre-computed scan results for today. Skips empty results."""
+        if not results:
+            return
         import json
         today = datetime.date.today().isoformat()
         with sqlite3.connect(self.db_path) as conn:

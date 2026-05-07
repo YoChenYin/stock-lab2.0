@@ -66,7 +66,7 @@ async def tw_factor_max(request: Request):
 async def tw_scan(request: Request):
     """優先讀 prefetch 預計算的 scan cache；cache miss 才即時掃描。"""
     stocks = _cache.get_scan("unified")
-    if stocks is None:
+    if not stocks:
         stocks = run_unified_scan(_stock_items())
     fetch_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     return templates.TemplateResponse("partials/tw_scan_results.html", {
@@ -79,7 +79,7 @@ async def tw_scan(request: Request):
 @router.post("/exit-scan", response_class=HTMLResponse)
 async def tw_exit_scan(request: Request):
     stocks = _cache.get_scan("exit")
-    if stocks is None:
+    if not stocks:
         stocks = run_exit_scan(_stock_items())
     fetch_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     return templates.TemplateResponse("partials/tw_exit_results.html", {
@@ -92,7 +92,7 @@ async def tw_exit_scan(request: Request):
 @router.post("/all-scan", response_class=HTMLResponse)
 async def tw_all_scan(request: Request):
     stocks = _cache.get_scan("all")
-    if stocks is None:
+    if not stocks:
         stocks = run_all_scan(_stock_items())
     fetch_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     return templates.TemplateResponse("partials/tw_all_results.html", {
