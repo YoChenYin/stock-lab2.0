@@ -122,10 +122,14 @@ class FactorRanker:
     def __init__(self, market: str = "TW") -> None:
         if market not in ("TW", "US"):
             raise ValueError(f"market 必須是 'TW' 或 'US'，傳入 {market!r}")
-        self.market   = market
-        self._vix_adj = 1.0
-        self._scores: dict[str, FactorScore] = {}
+        self.market      = market
+        self._vix_adj    = 1.0
+        self._scores:     dict[str, FactorScore] = {}
         self._feature_df: pd.DataFrame = pd.DataFrame()
+        self._prices_df:  pd.DataFrame = pd.DataFrame()
+        self._z_df:       pd.DataFrame = pd.DataFrame()
+        self._ic_stats:   dict         = {}
+        self._ic_weights: dict         = dict(WEIGHTS)
 
     # ── 公開介面 ─────────────────────────────────────────────────────
 
@@ -145,6 +149,24 @@ class FactorRanker:
 
         self._feature_df = df
         self._scores     = self._compute_scores(df)
+
+        # Compute Rank IC and derive IC-IR weights
+        self._ic_stats   = self._compute_factor_ic()
+        self._ic_weights = self._derive_ic_ir_weights(self._ic_stats)
+
+        # Re-apply composite with IC-IR weights when IC data is sufficient
+        if self._ic_stats and not self._z_df.empty:
+            w = self._ic_weights
+            self._z_df["composite"] = (
+                self._z_df["technical"] * w.get("technical", WEIGHTS["technical"]) +
+                self._z_df["flow"]      * w.get("flow",      WEIGHTS["flow"])      +
+                self._z_df["quality"]   * w.get("quality",   WEIGHTS["quality"])
+            )
+            for _, row in self._z_df.iterrows():
+                t = str(row["ticker"])
+                if t in self._scores:
+                    self._scores[t].composite = round(float(row["composite"]), 1)
+
         log.info(f"[FactorRanker] 完成，共 {len(self._scores)} 支股票")
         return self
 
@@ -168,6 +190,14 @@ class FactorRanker:
         groups = self._define_factor_groups()
         result = []
 
+        _GROUP_FACTORS: dict[str, list[str]] = {
+            "triple_sync":    ["z_ma_align", "z_rsi", "z_double_strong", "z_chip_accel", "z_revenue_yoy"],
+            "tech_breakout":  ["z_ma_align", "z_rsi"],
+            "chip_offensive": ["z_double_strong", "z_chip_accel"],
+            "rev_accel":      ["z_revenue_yoy", "z_book_to_price"],
+            "market_eq":      ["z_ma_align", "z_rsi", "z_double_strong", "z_chip_accel", "z_revenue_yoy"],
+        }
+
         # groups 回傳 5-tuple：(fname, label, group_key, tickers, sort_attr)
         for fname, label, group_key, tickers, sort_attr in groups:
             members = [self._scores[t] for t in tickers if t in self._scores]
@@ -189,6 +219,13 @@ class FactorRanker:
             # top stocks 用群組主因子排序（不用 composite）
             top = sorted(members, key=lambda s: getattr(s, sort_attr), reverse=True)[:5]
 
+            group_ic_irs = [
+                self._ic_stats[f]["ic_ir"]
+                for f in _GROUP_FACTORS.get(fname, [])
+                if f in self._ic_stats
+            ]
+            group_ic_ir = round(float(np.mean(group_ic_irs)), 3) if group_ic_irs else 0.0
+
             result.append({
                 "factor_name":    fname,
                 "factor_label":   label,
@@ -200,11 +237,30 @@ class FactorRanker:
                 "stock_count":    len(members),
                 "top_stocks":     [s.ticker for s in top],
                 "vix_adj":        self._vix_adj,
+                "ic_ir":          group_ic_ir,
+                "ic_weights":     self._ic_weights,
                 "date":           date.today().isoformat(),
                 "market":         self.market,
             })
 
         return sorted(result, key=lambda x: x["momentum_score"], reverse=True)
+
+    def get_evaluation(self) -> dict:
+        """
+        驗證指標：IC 統計、IC-IR 動態權重、股票數量。
+
+        回傳：
+          ic_stats   — 各因子 {ic_mean, ic_std, ic_ir, ic_series}
+          ic_weights — 動態合成權重 {technical, flow, quality}
+          stock_count, vix_adj, market
+        """
+        return {
+            "ic_stats":    self._ic_stats,
+            "ic_weights":  self._ic_weights,
+            "stock_count": len(self._scores),
+            "vix_adj":     self._vix_adj,
+            "market":      self.market,
+        }
 
     # ── VIX 環境開關 ─────────────────────────────────────────────────
 
@@ -223,7 +279,8 @@ class FactorRanker:
     # ── TW 特徵工程 ──────────────────────────────────────────────────
 
     def _build_tw_features(self) -> pd.DataFrame:
-        prices    = self._load_tw_prices()
+        self._prices_df = self._load_tw_prices()
+        prices          = self._prices_df
         inst      = self._load_tw_institutional()
         rev       = self._load_tw_revenue()
         valuation = self._load_tw_valuation()     # P/B, P/E, P/S (daily)
@@ -355,6 +412,11 @@ class FactorRanker:
         """
         df = df.copy().reset_index(drop=True)
 
+        # Ensure columns needed by TW pipeline exist (US df omits these)
+        for col, default in [("book_to_price", 0.0), ("pb_ratio", 0.0), ("log_mkt_cap", 0.0)]:
+            if col not in df.columns:
+                df[col] = default
+
         # ── 1. MAD Winsorization（連續因子去極值）──────────────────
         _CONT_FACTORS = ["rsi", "double_strong_days", "chip_accel",
                          "revenue_yoy", "book_to_price"]
@@ -390,18 +452,26 @@ class FactorRanker:
         bp_valid = df["book_to_price"].where(df["book_to_price"] > 0)
         df["z_book_to_price"]  = _zscore(bp_valid.fillna(bp_valid.median()))
 
+        # ── 3b. 正交化（Gram-Schmidt）——移除 flow 因子中的 quality 成分 ──
+        # chip_accel / double_strong 與 revenue_yoy 存在共線性（優質公司自然被法人追買）
+        # 正交化後 flow 因子代表「純籌碼動能」，獨立於基本面品質
+        df["z_chip_accel"]    = _orthogonalize(df["z_chip_accel"],    df["z_revenue_yoy"])
+        df["z_double_strong"] = _orthogonalize(df["z_double_strong"], df["z_revenue_yoy"])
+
         # ── 組別分數（0-100）────────────────────────────────────────
         df["technical"] = _to_score((df["z_ma_align"] + df["z_rsi"]) / 2.0)
         df["flow"]      = _to_score((df["z_double_strong"] + df["z_chip_accel"]) / 2.0)
         # quality = 50% 月營收 YoY 加速 + 50% Book-to-Price（便宜度）
         df["quality"]   = _to_score((df["z_revenue_yoy"] + df["z_book_to_price"]) / 2.0)
 
-        # ── 加權綜合分 ───────────────────────────────────────────────
+        # ── 加權綜合分（初始用預設權重；fit() 後用 IC-IR 動態權重覆蓋）──
         df["composite"] = (
             df["technical"] * WEIGHTS["technical"] +
             df["flow"]      * WEIGHTS["flow"]      +
             df["quality"]   * WEIGHTS["quality"]
         )
+
+        self._z_df = df.copy()  # preserve for IC computation and weight re-application
 
         result: dict[str, FactorScore] = {}
         for _, row in df.iterrows():
@@ -472,6 +542,90 @@ class FactorRanker:
         groups.append(    ("market_eq",      "大盤等權",   "market",    all_tickers, "composite"))
 
         return groups
+
+    # ── Rank IC & IC-IR 動態權重 ─────────────────────────────────────
+
+    def _compute_factor_ic(self) -> dict[str, dict]:
+        """
+        Rank IC（Spearman）：各因子 Z-Score vs 過去 1M/3M/6M 報酬。
+        使用當前橫截面因子值與歷史價格回算，共 3 個 lookback IC 值。
+        回傳格式：{factor_col: {ic_mean, ic_std, ic_ir, ic_series}}
+        """
+        if self._z_df.empty or self._prices_df.empty:
+            return {}
+
+        prices = self._prices_df.copy()
+        prices["date"] = pd.to_datetime(prices["date"], errors="coerce")
+        prices = prices.sort_values(["sid", "date"]).dropna(subset=["date", "close"])
+
+        factor_cols = [c for c in ["z_ma_align", "z_rsi", "z_double_strong",
+                                    "z_chip_accel", "z_revenue_yoy", "z_book_to_price"]
+                       if c in self._z_df.columns]
+        if not factor_cols:
+            return {}
+
+        fdf = self._z_df.copy().set_index("ticker")[factor_cols].fillna(0)
+        latest_close = prices.groupby("sid")["close"].last()
+        ic_acc: dict[str, list[float]] = {f: [] for f in factor_cols}
+
+        for lb_days in (21, 63, 126):
+            past_close = (
+                prices.groupby("sid")["close"]
+                .apply(lambda g: float(g.iloc[-lb_days - 1]) if len(g) > lb_days else np.nan)
+                .dropna()
+            )
+            common = latest_close.index.intersection(past_close.index).intersection(fdf.index)
+            if len(common) < 10:
+                continue
+
+            ret = (latest_close[common] - past_close[common]) / (past_close[common].abs() + 1e-9)
+            ret_vals = ret.values
+
+            for f in factor_cols:
+                ic = _spearman_ic(fdf.loc[common, f].values, ret_vals)
+                ic_acc[f].append(ic)
+
+        result: dict[str, dict] = {}
+        for f, ics in ic_acc.items():
+            if not ics:
+                continue
+            arr = np.array(ics, dtype=float)
+            mu  = float(arr.mean())
+            sig = float(arr.std()) if len(arr) > 1 else 1e-6
+            sig = max(sig, 1e-6)
+            result[f] = {
+                "ic_mean":   round(mu, 4),
+                "ic_std":    round(sig, 4),
+                "ic_ir":     round(mu / sig, 3),
+                "ic_series": [round(float(x), 4) for x in ics],
+            }
+        return result
+
+    def _derive_ic_ir_weights(self, ic_stats: dict) -> dict[str, float]:
+        """
+        從各因子 IC-IR 推導群組權重。
+        |IC-IR| 越高 → 歷史預測力越強 → 權重越大。
+        IC 資料不足（total < 0.05）時回退至固定 WEIGHTS。
+        """
+        _F2G = {
+            "z_ma_align":      "technical",
+            "z_rsi":           "technical",
+            "z_double_strong": "flow",
+            "z_chip_accel":    "flow",
+            "z_revenue_yoy":   "quality",
+            "z_book_to_price": "quality",
+        }
+        group_ir: dict[str, list[float]] = {"technical": [], "flow": [], "quality": []}
+        for f, stats in ic_stats.items():
+            g = _F2G.get(f)
+            if g:
+                group_ir[g].append(abs(stats["ic_ir"]))
+
+        group_avg = {g: float(np.mean(v)) if v else 0.0 for g, v in group_ir.items()}
+        total = sum(group_avg.values())
+        if total < 0.05:
+            return dict(WEIGHTS)
+        return {g: round(v / total, 4) for g, v in group_avg.items()}
 
     # ── 資料載入（TW）────────────────────────────────────────────────
 
@@ -625,6 +779,40 @@ class FactorRanker:
 # ─────────────────────────────────────────────────────────────────────
 # 純函式工具
 # ─────────────────────────────────────────────────────────────────────
+
+def _orthogonalize(factor: pd.Series, reference: pd.Series) -> pd.Series:
+    """
+    Gram-Schmidt 正交化：從 factor 中移除 reference 的投影分量。
+    factor_orth = factor - (factor·reference / reference·reference) * reference
+    兩者均為 Z-Score（均值 ~0），不足 10 個有效點時直接回傳原值。
+    """
+    mask = factor.notna() & reference.notna()
+    if mask.sum() < 10:
+        return factor
+    f = factor[mask].values
+    r = reference[mask].values
+    rr = float((r * r).sum())
+    if rr < 1e-12:
+        return factor
+    proj = float((f * r).sum() / rr)
+    result = factor.copy()
+    result[mask] = f - proj * r
+    return result
+
+
+def _spearman_ic(x: np.ndarray, y: np.ndarray) -> float:
+    """純 numpy Spearman rank 相關係數（無需 scipy）。"""
+    if len(x) < 5:
+        return 0.0
+    rx = pd.Series(x).rank().values.astype(float)
+    ry = pd.Series(y).rank().values.astype(float)
+    rx_dm = rx - rx.mean()
+    ry_dm = ry - ry.mean()
+    den = float(np.sqrt((rx_dm ** 2).sum() * (ry_dm ** 2).sum()))
+    if den < 1e-12:
+        return 0.0
+    return float((rx_dm * ry_dm).sum() / den)
+
 
 def _mad_winsorize(series: pd.Series, n: float = 3.0) -> pd.Series:
     """

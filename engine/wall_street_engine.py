@@ -42,7 +42,8 @@ class WallStreetEngine:
                 print("FinMind login failed — check FINMIND_TOKEN.")
 
     # ── internal fetch (cache-first, incremental) ─────────
-    def _smart_fetch(self, sid: str, data_type: str, fetch_func, **kwargs) -> pd.DataFrame:
+    def _smart_fetch(self, sid: str, data_type: str, fetch_func,
+                     dedup_keys: tuple = ("date",), **kwargs) -> pd.DataFrame:
         cached_df, last_updated = self.cache.get(sid, data_type)
         today = datetime.date.today().isoformat()
 
@@ -67,7 +68,7 @@ class WallStreetEngine:
                 if cached_df is not None and not cached_df.empty:
                     result = (
                         pd.concat([cached_df, new_data])
-                        .drop_duplicates(subset=["date"], keep="last")
+                        .drop_duplicates(subset=list(dedup_keys), keep="last")
                         .sort_values("date")
                         .reset_index(drop=True)
                     )
@@ -108,7 +109,8 @@ class WallStreetEngine:
         p["date"] = pd.to_datetime(p["date"])
 
         inst = _self._smart_fetch(sid, "institutional",
-                                   _self.dl.taiwan_stock_institutional_investors, start_date=start)
+                                   _self.dl.taiwan_stock_institutional_investors,
+                                   dedup_keys=("date", "name"), start_date=start)
         rev  = _self._smart_fetch(sid, "revenue",
                                    _self.dl.taiwan_stock_month_revenue, start_date=start)
         mv   = _self._smart_fetch(sid, "market_value",
