@@ -64,6 +64,26 @@ class DataCacheManager:
                 )
             """)
 
+            # Schema version table — tracks one-time data fixes
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+
+            # v2: clear corrupted institutional data (stored with single row per date
+            #     due to the old dedup_keys=("date",) bug in _smart_fetch).
+            #     After this migration, _smart_fetch uses ("date","name") and re-fetches.
+            ver = conn.execute(
+                "SELECT value FROM schema_version WHERE key='institutional_dedup_v2'"
+            ).fetchone()
+            if not ver:
+                conn.execute("DELETE FROM api_cache WHERE data_type='institutional'")
+                conn.execute(
+                    "INSERT OR REPLACE INTO schema_version VALUES ('institutional_dedup_v2', '1')"
+                )
+
     # ── api_cache CRUD ───────────────────────────────────────
 
     def get(self, sid: str, data_type: str) -> tuple[pd.DataFrame | None, str | None]:
