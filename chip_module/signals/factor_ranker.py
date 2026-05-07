@@ -270,10 +270,14 @@ class FactorRanker:
                         n20  = net[-20:].mean() if len(net) >= 20 else 0.0
                         chip_accel = float((n5 - n20) / ref)
 
-            # ── Quality — 月營收 YoY ─────────────────────────────────
+            # ── Quality — 月營收 YoY（PIT 過濾）────────────────────────
+            # 只使用 available_date <= 今天的資料，避免用到尚未公布的數字
             revenue_yoy = 0.0
             if not rev.empty:
+                today_ts = pd.Timestamp.now().normalize()
                 sr = rev[rev["sid"] == sid].sort_values("date")
+                if "available_date" in sr.columns:
+                    sr = sr[sr["available_date"] <= today_ts]
                 yoys = sr["yoy"].dropna().tail(3).to_numpy()
                 if len(yoys) > 0:
                     revenue_yoy = float(np.mean(yoys))
@@ -344,10 +348,27 @@ class FactorRanker:
 
     def _compute_scores(self, df: pd.DataFrame) -> dict[str, FactorScore]:
         """
-        橫截面 Z-Score 標準化所有連續因子，
-        映射至 0-100，加權合成 composite。
+        三層預處理後合成分數：
+          1. MAD Winsorization  — 去極值，防止 TSMC 等超大市值拉偏分布
+          2. 市值中性化          — OLS 殘差，移除連續因子的大小市值暴露
+          3. 橫截面 Z-Score     — 標準化 → 0-100 映射 → 加權合成
         """
         df = df.copy().reset_index(drop=True)
+
+        # ── 1. MAD Winsorization（連續因子去極值）──────────────────
+        _CONT_FACTORS = ["rsi", "double_strong_days", "chip_accel",
+                         "revenue_yoy", "book_to_price"]
+        for col in _CONT_FACTORS:
+            df[col] = _mad_winsorize(df[col].astype(float))
+
+        # ── 2. 市值中性化（移除 size bias）──────────────────────────
+        # ma_align 為離散 0-3 分，技術性指標不受市值驅動，不做中性化
+        # 其餘連續因子均可能受市值影響（大市值股法人關注度/估值天然偏斜）
+        lmc = df.get("log_mkt_cap", pd.Series(np.zeros(len(df))))
+        has_mktcap = (lmc > 0).sum() >= 10
+        if has_mktcap:
+            for col in _CONT_FACTORS:
+                df[col] = _neutralize_mktcap(df[col], lmc)
 
         def _zscore(col: pd.Series, clip: float = 3.0) -> pd.Series:
             mu, sigma = col.mean(), col.std()
@@ -359,13 +380,13 @@ class FactorRanker:
             """Z ∈ [-3, 3]  →  score ∈ [0, 100]"""
             return (z + 3.0) / 6.0 * 100.0
 
-        # ── Z-Score 各因子 ───────────────────────────────────────────
+        # ── 3. Z-Score 各因子 ────────────────────────────────────────
         df["z_ma_align"]       = _zscore(df["ma_align"])
         df["z_rsi"]            = _zscore(df["rsi"])
         df["z_double_strong"]  = _zscore(df["double_strong_days"].astype(float))
         df["z_chip_accel"]     = _zscore(df["chip_accel"])
         df["z_revenue_yoy"]    = _zscore(df["revenue_yoy"])
-        # book_to_price：只對有效值（>0）做 Z-Score，缺失股票設為 0（中性）
+        # book_to_price：缺資料股票填中位數（中性），不影響有資料的相對排名
         bp_valid = df["book_to_price"].where(df["book_to_price"] > 0)
         df["z_book_to_price"]  = _zscore(bp_valid.fillna(bp_valid.median()))
 
@@ -507,7 +528,12 @@ class FactorRanker:
         return pd.concat(frames, ignore_index=True)
 
     def _load_tw_revenue(self) -> pd.DataFrame:
-        """載入月營收並計算 YoY（與前一年同月比較）。"""
+        """載入月營收並計算 YoY，附加 PIT available_date。
+
+        available_date = 月末 + 10 天（保守估計公布日）
+        例：date=2025-04-01 → available_date=2025-05-10
+        用於 _build_tw_features 過濾「當時尚未公布的數字」，避免前瞻偏差。
+        """
         if not _FINMIND_DB.exists():
             return pd.DataFrame()
         frames: list[pd.DataFrame] = []
@@ -530,7 +556,11 @@ class FactorRanker:
                     df["yoy"] = df["revenue"].pct_change(12) * 100
                 else:
                     df["yoy"] = np.nan
-                frames.append(df[["sid", "date", "yoy"]])
+                # PIT：月末 + 10 天 = 保守安全公布日（覆蓋 ~90% 上市公司）
+                df["available_date"] = (
+                    df["date"] + pd.offsets.MonthEnd(0) + pd.Timedelta(days=10)
+                )
+                frames.append(df[["sid", "date", "available_date", "yoy"]])
             except Exception:
                 continue
         if not frames:
@@ -595,6 +625,40 @@ class FactorRanker:
 # ─────────────────────────────────────────────────────────────────────
 # 純函式工具
 # ─────────────────────────────────────────────────────────────────────
+
+def _mad_winsorize(series: pd.Series, n: float = 3.0) -> pd.Series:
+    """
+    中位數絕對偏差去極值（比 σ-clip 更穩健）。
+    clip 範圍：[median - n*MAD, median + n*MAD]，n=3 覆蓋約 99% 正態分布。
+    """
+    s = series.dropna()
+    if s.empty:
+        return series
+    median = s.median()
+    mad = (s - median).abs().median()
+    if mad < 1e-9:
+        return series
+    return series.clip(median - n * mad, median + n * mad)
+
+
+def _neutralize_mktcap(factor: pd.Series, log_mkt_cap: pd.Series) -> pd.Series:
+    """
+    移除因子中的市值暴露：OLS 殘差法（不需 sklearn）。
+    factor_neutral = factor - (a + b * log_mkt_cap)
+    缺少市值資料的股票（log_mkt_cap == 0）直接跳過，保留原值。
+    """
+    mask = factor.notna() & (log_mkt_cap > 0)
+    if mask.sum() < 10:
+        return factor
+    x = log_mkt_cap[mask].values
+    y = factor[mask].values
+    x_dm = x - x.mean()
+    b = float((x_dm * (y - y.mean())).sum() / ((x_dm ** 2).sum() + 1e-12))
+    a = float(y.mean() - b * x.mean())
+    result = factor.copy()
+    result[mask] = y - (a + b * x)
+    return result
+
 
 def _calc_rsi(close: np.ndarray, period: int = 14) -> float:
     """Wilder's RSI。資料不足時回傳中性值 50。"""
