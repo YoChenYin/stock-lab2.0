@@ -40,22 +40,50 @@ class WallStreetEngine:
             except Exception:
                 print("FinMind login failed — check FINMIND_TOKEN.")
 
-    # ── internal fetch (cache-first) ──────────────────────
+    # ── internal fetch (cache-first, incremental) ─────────
     def _smart_fetch(self, sid: str, data_type: str, fetch_func, **kwargs) -> pd.DataFrame:
-        cached = self.cache.get(sid, data_type)
-        if cached is not None:
-            return cached
+        cached_df, last_updated = self.cache.get(sid, data_type)
+        today = datetime.date.today().isoformat()
+
+        if last_updated == today:
+            return cached_df  # Already fresh today, no API call needed
+
+        # Incremental: if we have cached data, only fetch the delta since last update
+        fetch_kwargs = dict(kwargs)
+        if last_updated:
+            next_day = (
+                datetime.date.fromisoformat(last_updated) + datetime.timedelta(days=1)
+            ).isoformat()
+            fetch_kwargs["start_date"] = next_day
+
         time.sleep(0.2)
         try:
-            data = fetch_func(stock_id=sid, **kwargs)
-            if isinstance(data, dict):
-                data = pd.DataFrame(data.get("data", []))
-            if not data.empty:
-                self.cache.set(sid, data_type, data)
-            return data
+            new_data = fetch_func(stock_id=sid, **fetch_kwargs)
+            if isinstance(new_data, dict):
+                new_data = pd.DataFrame(new_data.get("data", []))
+
+            if new_data is not None and not new_data.empty:
+                if cached_df is not None and not cached_df.empty:
+                    result = (
+                        pd.concat([cached_df, new_data])
+                        .drop_duplicates(subset=["date"], keep="last")
+                        .sort_values("date")
+                        .reset_index(drop=True)
+                    )
+                else:
+                    result = new_data
+                self.cache.set(sid, data_type, result)
+                return result
+
+            # No new data (holiday / weekend) — mark as current so we skip tomorrow
+            if cached_df is not None and not cached_df.empty:
+                self.cache.touch(sid, data_type)
+                return cached_df
+            return pd.DataFrame()
+
         except Exception as e:
             print(f"[API Error] {sid} / {data_type}: {e}")
-            return pd.DataFrame()
+            return cached_df if cached_df is not None else pd.DataFrame()
 
     # ─────────────────────────────────────────────────────
     # DATA FETCHERS
