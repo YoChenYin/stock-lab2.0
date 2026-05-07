@@ -115,8 +115,14 @@ class WallStreetEngine:
                                    _self.dl.taiwan_stock_month_revenue, start_date=start)
         mv   = _self._smart_fetch(sid, "market_value",
                                    _self.dl.taiwan_stock_market_value, start_date=start)
-        val  = _self._smart_fetch(sid, "valuation",
-                                   _self.dl.taiwan_stock_per_pbr_ps, start_date=start)
+
+        # taiwan_stock_per_pbr_ps may not exist in older FinMind releases
+        _pbr_func = getattr(_self.dl, "taiwan_stock_per_pbr_ps", None)
+        val = (
+            _self._smart_fetch(sid, "valuation", _pbr_func, start_date=start)
+            if _pbr_func is not None
+            else pd.DataFrame()
+        )
 
         # Pivot institutional into f_net / it_net columns
         net = pd.DataFrame(index=p["date"].unique()).sort_index()
