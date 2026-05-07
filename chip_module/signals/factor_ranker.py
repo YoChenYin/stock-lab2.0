@@ -18,9 +18,9 @@ chip_module/signals/factor_ranker.py
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import pickle
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
@@ -428,10 +428,10 @@ class FactorRanker:
             ).fetchall()
         for sid, content in rows:
             try:
-                data = json.loads(content)
-                if not isinstance(data, dict) or "close" not in data or "date" not in data:
+                df = pickle.loads(content)
+                if df.empty or "close" not in df.columns or "date" not in df.columns:
                     continue
-                df = pd.DataFrame(data)[["date", "close"]].copy()
+                df = df[["date", "close"]].copy()
                 df["sid"]   = sid
                 df["close"] = pd.to_numeric(df["close"], errors="coerce")
                 frames.append(df[["sid", "date", "close"]])
@@ -453,14 +453,14 @@ class FactorRanker:
             ).fetchall()
         for sid, content in rows:
             try:
-                data = json.loads(content)
-                df = pd.DataFrame(data)
+                df = pickle.loads(content)
                 if df.empty or "date" not in df.columns or "name" not in df.columns:
                     continue
+                df = df.copy()
                 df["sid"]  = sid
                 df["date"] = pd.to_datetime(df["date"], errors="coerce")
-                df["buy"]  = pd.to_numeric(df.get("buy",  0), errors="coerce").fillna(0)
-                df["sell"] = pd.to_numeric(df.get("sell", 0), errors="coerce").fillna(0)
+                df["buy"]  = pd.to_numeric(df["buy"]  if "buy"  in df.columns else 0, errors="coerce").fillna(0)
+                df["sell"] = pd.to_numeric(df["sell"] if "sell" in df.columns else 0, errors="coerce").fillna(0)
                 df["net"]  = df["buy"] - df["sell"]
                 frames.append(df[["sid", "date", "name", "net"]])
             except Exception:
@@ -480,14 +480,14 @@ class FactorRanker:
             ).fetchall()
         for sid, content in rows:
             try:
-                data = json.loads(content)
-                df   = pd.DataFrame(data)
+                df = pickle.loads(content)
                 if df.empty or "revenue" not in df.columns:
                     continue
+                df = df.copy()
                 df["sid"]     = sid
                 df["date"]    = pd.to_datetime(df["date"], errors="coerce")
                 df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
-                df = df.dropna(subset=["date", "revenue"]).sort_values("date").copy()
+                df = df.dropna(subset=["date", "revenue"]).sort_values("date")
                 # YoY：與 12 個月前同月比較
                 if len(df) >= 13:
                     df["yoy"] = df["revenue"].pct_change(12) * 100
