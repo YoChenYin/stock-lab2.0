@@ -63,7 +63,7 @@ class FactorScore:
     ticker:             str
     technical:          float = 50.0   # 0-100
     flow:               float = 50.0   # 0-100
-    quality:            float = 50.0   # 0-100
+    quality:            float = 50.0   # 0-100  (revenue_yoy + book_to_price 各半)
     composite:          float = 50.0   # weighted, before VIX
     vix_adj:            float = 1.0    # VIX context multiplier
 
@@ -73,10 +73,13 @@ class FactorScore:
     z_double_strong:    float = 0.0
     z_chip_accel:       float = 0.0
     z_revenue_yoy:      float = 0.0
+    z_book_to_price:    float = 0.0    # B/P = 1/PBratio，高 = 便宜
 
     # raw values
     double_strong_days: int   = 0
     rsi_raw:            float = 50.0
+    pb_ratio:           float = 0.0    # 最新 P/B ratio（展示用）
+    log_mkt_cap:        float = 0.0    # log(市值)（中性化參考）
 
     def entry_score(self) -> float:
         """VIX 折扣後的最終進場分。"""
@@ -93,11 +96,14 @@ class FactorScore:
             "vix_adj":            self.vix_adj,
             "double_strong_days": self.double_strong_days,
             "rsi":                self.rsi_raw,
+            "pb_ratio":           self.pb_ratio,
+            "log_mkt_cap":        self.log_mkt_cap,
             "z_ma_align":         self.z_ma_align,
             "z_rsi":              self.z_rsi,
             "z_double_strong":    self.z_double_strong,
             "z_chip_accel":       self.z_chip_accel,
             "z_revenue_yoy":      self.z_revenue_yoy,
+            "z_book_to_price":    self.z_book_to_price,
         }
 
 
@@ -217,9 +223,11 @@ class FactorRanker:
     # ── TW 特徵工程 ──────────────────────────────────────────────────
 
     def _build_tw_features(self) -> pd.DataFrame:
-        prices = self._load_tw_prices()
-        inst   = self._load_tw_institutional()
-        rev    = self._load_tw_revenue()
+        prices    = self._load_tw_prices()
+        inst      = self._load_tw_institutional()
+        rev       = self._load_tw_revenue()
+        valuation = self._load_tw_valuation()     # P/B, P/E, P/S (daily)
+        mktcap    = self._load_tw_market_value()  # 市值 (daily)
 
         if prices.empty:
             return pd.DataFrame()
@@ -248,7 +256,6 @@ class FactorRanker:
                     it = recent[recent["name"] == "Investment_Trust"][["date","net"]].rename(columns={"net":"it"})
                     if not f.empty and not it.empty:
                         m = pd.merge(f, it, on="date").sort_values("date")
-                        # 雙強連續天數
                         both = ((m["f"] > 0) & (m["it"] > 0)).to_numpy()
                         streak = 0
                         for v in reversed(both):
@@ -257,7 +264,6 @@ class FactorRanker:
                             else:
                                 break
                         double_strong_days = streak
-                        # 籌碼加速：5D vs 20D 淨買超差值（以均價正規化）
                         net  = (m["f"] + m["it"]).to_numpy()
                         ref  = abs(net).mean() or 1.0
                         n5   = net[-5:].mean()  if len(net) >= 5  else 0.0
@@ -272,6 +278,27 @@ class FactorRanker:
                 if len(yoys) > 0:
                     revenue_yoy = float(np.mean(yoys))
 
+            # ── Quality — Book-to-Price (1/PBratio) ─────────────────
+            # 高 B/P = 股價相對淨值便宜，value premium
+            book_to_price = 0.0
+            pb_ratio_raw  = 0.0
+            if not valuation.empty:
+                sv = valuation[valuation["sid"] == sid].sort_values("date")
+                if not sv.empty and "pbratio" in sv.columns:
+                    latest_pb = sv["pbratio"].dropna().iloc[-1] if not sv["pbratio"].dropna().empty else 0
+                    if latest_pb > 0:
+                        pb_ratio_raw  = float(latest_pb)
+                        book_to_price = float(1.0 / latest_pb)
+
+            # ── Market Cap — 中性化參考 ──────────────────────────────
+            log_mkt_cap = 0.0
+            if not mktcap.empty:
+                sm = mktcap[mktcap["sid"] == sid].sort_values("date")
+                if not sm.empty and "market_value" in sm.columns:
+                    latest_mv = sm["market_value"].dropna().iloc[-1] if not sm["market_value"].dropna().empty else 0
+                    if latest_mv > 0:
+                        log_mkt_cap = float(np.log(latest_mv))
+
             rows.append({
                 "ticker":             str(sid),
                 "ma_align":           float(ma_align),
@@ -279,6 +306,9 @@ class FactorRanker:
                 "double_strong_days": double_strong_days,
                 "chip_accel":         chip_accel,
                 "revenue_yoy":        revenue_yoy,
+                "book_to_price":      book_to_price,
+                "pb_ratio":           pb_ratio_raw,
+                "log_mkt_cap":        log_mkt_cap,
             })
 
         return pd.DataFrame(rows) if rows else pd.DataFrame()
@@ -330,16 +360,20 @@ class FactorRanker:
             return (z + 3.0) / 6.0 * 100.0
 
         # ── Z-Score 各因子 ───────────────────────────────────────────
-        df["z_ma_align"]      = _zscore(df["ma_align"])
-        df["z_rsi"]           = _zscore(df["rsi"])
-        df["z_double_strong"] = _zscore(df["double_strong_days"].astype(float))
-        df["z_chip_accel"]    = _zscore(df["chip_accel"])
-        df["z_revenue_yoy"]   = _zscore(df["revenue_yoy"])
+        df["z_ma_align"]       = _zscore(df["ma_align"])
+        df["z_rsi"]            = _zscore(df["rsi"])
+        df["z_double_strong"]  = _zscore(df["double_strong_days"].astype(float))
+        df["z_chip_accel"]     = _zscore(df["chip_accel"])
+        df["z_revenue_yoy"]    = _zscore(df["revenue_yoy"])
+        # book_to_price：只對有效值（>0）做 Z-Score，缺失股票設為 0（中性）
+        bp_valid = df["book_to_price"].where(df["book_to_price"] > 0)
+        df["z_book_to_price"]  = _zscore(bp_valid.fillna(bp_valid.median()))
 
         # ── 組別分數（0-100）────────────────────────────────────────
         df["technical"] = _to_score((df["z_ma_align"] + df["z_rsi"]) / 2.0)
         df["flow"]      = _to_score((df["z_double_strong"] + df["z_chip_accel"]) / 2.0)
-        df["quality"]   = _to_score(df["z_revenue_yoy"])
+        # quality = 50% 月營收 YoY 加速 + 50% Book-to-Price（便宜度）
+        df["quality"]   = _to_score((df["z_revenue_yoy"] + df["z_book_to_price"]) / 2.0)
 
         # ── 加權綜合分 ───────────────────────────────────────────────
         df["composite"] = (
@@ -357,13 +391,16 @@ class FactorRanker:
                 quality            = round(float(row["quality"]),    1),
                 composite          = round(float(row["composite"]),  1),
                 vix_adj            = self._vix_adj,
-                z_ma_align         = round(float(row["z_ma_align"]),      3),
-                z_rsi              = round(float(row["z_rsi"]),           3),
-                z_double_strong    = round(float(row["z_double_strong"]), 3),
-                z_chip_accel       = round(float(row["z_chip_accel"]),    3),
-                z_revenue_yoy      = round(float(row["z_revenue_yoy"]),  3),
+                z_ma_align         = round(float(row["z_ma_align"]),       3),
+                z_rsi              = round(float(row["z_rsi"]),            3),
+                z_double_strong    = round(float(row["z_double_strong"]),  3),
+                z_chip_accel       = round(float(row["z_chip_accel"]),     3),
+                z_revenue_yoy      = round(float(row["z_revenue_yoy"]),   3),
+                z_book_to_price    = round(float(row["z_book_to_price"]), 3),
                 double_strong_days = int(row.get("double_strong_days", 0)),
                 rsi_raw            = round(float(row["rsi"]), 1),
+                pb_ratio           = round(float(row.get("pb_ratio", 0)), 2),
+                log_mkt_cap        = round(float(row.get("log_mkt_cap", 0)), 3),
             )
             result[fs.ticker] = fs
 
@@ -494,6 +531,60 @@ class FactorRanker:
                 else:
                     df["yoy"] = np.nan
                 frames.append(df[["sid", "date", "yoy"]])
+            except Exception:
+                continue
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+
+    def _load_tw_valuation(self) -> pd.DataFrame:
+        """載入 P/E, P/B, P/S 日頻資料（taiwan_stock_per_pbr_ps）。"""
+        if not _FINMIND_DB.exists():
+            return pd.DataFrame()
+        frames: list[pd.DataFrame] = []
+        with sqlite3.connect(_FINMIND_DB) as conn:
+            rows = conn.execute(
+                "SELECT sid, content FROM api_cache WHERE data_type='valuation'"
+            ).fetchall()
+        for sid, content in rows:
+            try:
+                df = pickle.loads(content)
+                if df.empty or "date" not in df.columns:
+                    continue
+                df = df.copy()
+                df.columns = [c.lower() for c in df.columns]
+                df["sid"]  = sid
+                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                keep = ["sid", "date"] + [c for c in ["peratio", "pbratio", "psratio"] if c in df.columns]
+                frames.append(df[keep])
+            except Exception:
+                continue
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+
+    def _load_tw_market_value(self) -> pd.DataFrame:
+        """載入日頻市值資料（taiwan_stock_market_value，單位 NT$千）。"""
+        if not _FINMIND_DB.exists():
+            return pd.DataFrame()
+        frames: list[pd.DataFrame] = []
+        with sqlite3.connect(_FINMIND_DB) as conn:
+            rows = conn.execute(
+                "SELECT sid, content FROM api_cache WHERE data_type='market_value'"
+            ).fetchall()
+        for sid, content in rows:
+            try:
+                df = pickle.loads(content)
+                if df.empty or "date" not in df.columns:
+                    continue
+                df = df.copy()
+                df.columns = [c.lower() for c in df.columns]
+                df["sid"]  = sid
+                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                if "market_value" not in df.columns:
+                    continue
+                df["market_value"] = pd.to_numeric(df["market_value"], errors="coerce")
+                frames.append(df[["sid", "date", "market_value"]])
             except Exception:
                 continue
         if not frames:

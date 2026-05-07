@@ -12,6 +12,7 @@ Design rules:
 """
 
 import pandas as pd
+import numpy as np
 import datetime
 import time
 import os
@@ -90,7 +91,13 @@ class WallStreetEngine:
     # ─────────────────────────────────────────────────────
 
     def fetch_data(_self, sid: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Returns (df_daily_with_institutional, df_revenue)."""
+        """Returns (df_daily_with_institutional_and_valuation, df_revenue).
+
+        df columns include:
+          price:   date, open, high, low, close, trading_volume
+          chip:    f_net, it_net, ma20
+          valuation: market_value (NT$千), log_mkt_cap, pbratio, peratio, psratio
+        """
         start = (datetime.date.today() - datetime.timedelta(days=730)).strftime("%Y-%m-%d")
 
         p = _self._smart_fetch(sid, "daily", _self.dl.taiwan_stock_daily, start_date=start)
@@ -104,6 +111,10 @@ class WallStreetEngine:
                                    _self.dl.taiwan_stock_institutional_investors, start_date=start)
         rev  = _self._smart_fetch(sid, "revenue",
                                    _self.dl.taiwan_stock_month_revenue, start_date=start)
+        mv   = _self._smart_fetch(sid, "market_value",
+                                   _self.dl.taiwan_stock_market_value, start_date=start)
+        val  = _self._smart_fetch(sid, "valuation",
+                                   _self.dl.taiwan_stock_per_pbr_ps, start_date=start)
 
         # Pivot institutional into f_net / it_net columns
         net = pd.DataFrame(index=p["date"].unique()).sort_index()
@@ -122,6 +133,25 @@ class WallStreetEngine:
         df = p.merge(net.reset_index().rename(columns={"index": "date"}),
                      on="date", how="left").fillna(0)
         df["ma20"] = df["close"].rolling(20).mean()
+
+        # Merge market value (NT$千) → derive log_mkt_cap
+        if not mv.empty:
+            mv = mv.copy()
+            mv.columns = [c.lower() for c in mv.columns]
+            mv["date"] = pd.to_datetime(mv["date"])
+            if "market_value" in mv.columns:
+                df = df.merge(mv[["date", "market_value"]], on="date", how="left")
+                df["log_mkt_cap"] = np.log(df["market_value"].clip(lower=1))
+
+        # Merge P/E, P/B, P/S ratios
+        if not val.empty:
+            val = val.copy()
+            val.columns = [c.lower() for c in val.columns]
+            val["date"] = pd.to_datetime(val["date"])
+            ratio_cols = [c for c in ["peratio", "pbratio", "psratio"] if c in val.columns]
+            if ratio_cols:
+                df = df.merge(val[["date"] + ratio_cols], on="date", how="left")
+
         return df, rev
 
     def fetch_latest_mops_pdf_info(self, sid: str) -> dict:
