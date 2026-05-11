@@ -26,19 +26,20 @@ from sector_data import STOCK_POOL
 SLEEP_BETWEEN = 0.5   # FinMind 免費版每秒 ~2 requests，0.5s 間隔安全
 
 
-def run(tickers: list[str] | None = None):
+def run(tickers: list[str] | None = None, force: bool = False):
     """
     Step 1: 預抓所有台股資料進 finmind_cache.db（增量）。
     Step 2: 預計算三種 scan 並寫入 tw_scan_cache。
     tickers=None 時使用 STOCK_POOL 全部。
+    force=True 可繞過今日快取守衛，強制重新呼叫 API。
     """
     targets = tickers or list(STOCK_POOL.keys())
-    print(f"[tw_prefetch] 開始預抓 {len(targets)} 支台股...")
+    print(f"[tw_prefetch] 開始預抓 {len(targets)} 支台股... {'(force)' if force else ''}")
 
     ok, skip, fail = 0, 0, 0
     for sid in tqdm(targets, desc="[tw_prefetch] fetch"):
         try:
-            engine = WallStreetEngine()
+            engine = WallStreetEngine(force=force)
             df, _ = engine.fetch_data(sid)
             if df.empty:
                 skip += 1

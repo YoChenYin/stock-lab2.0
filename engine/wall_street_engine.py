@@ -30,10 +30,11 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Engine
 # ─────────────────────────────────────────────────────────
 class WallStreetEngine:
-    def __init__(self, fm_token: str = ""):
+    def __init__(self, fm_token: str = "", force: bool = False):
         self.dl       = DataLoader()
         self.cache    = DataCacheManager()
         self.fm_token = fm_token or os.environ.get("FINMIND_TOKEN", "")
+        self.force    = force  # bypass today-guard for manual re-fetch
 
         if self.fm_token:
             try:
@@ -47,7 +48,7 @@ class WallStreetEngine:
         cached_df, last_updated = self.cache.get(sid, data_type)
         today = datetime.date.today().isoformat()
 
-        if last_updated == today:
+        if last_updated == today and not self.force:
             return cached_df  # Already fresh today, no API call needed
 
         # Incremental: if we have cached data, only fetch the delta since last update
