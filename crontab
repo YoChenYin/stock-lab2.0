@@ -1,3 +1,5 @@
+PATH=/usr/local/bin:/usr/bin:/bin
+
 # 台股收盤後預抓（TST 14:30 = UTC 06:30）週一到週五
 30 6 * * 1-5 root cd /app && python3 -c "from chip_module.fetchers.tw_prefetch import run; run()" >> /data/cron_tw.log 2>&1
 # 美股收盤後全量更新（TST 23:30 = UTC 15:30）週一到週五

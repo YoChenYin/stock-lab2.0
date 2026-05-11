@@ -16,7 +16,8 @@ COPY . .
 
 RUN chmod +x start.sh \
     && cp crontab /etc/cron.d/fetch_daily \
-    && chmod 0644 /etc/cron.d/fetch_daily
+    && chmod 0644 /etc/cron.d/fetch_daily \
+    && mkdir -p /data
 
 EXPOSE 8080
 
