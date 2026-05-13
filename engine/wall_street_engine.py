@@ -66,6 +66,8 @@ class WallStreetEngine:
                 new_data = pd.DataFrame(new_data.get("data", []))
 
             if new_data is not None and not new_data.empty:
+                if "date" in new_data.columns:
+                    new_data["date"] = pd.to_datetime(new_data["date"])
                 if cached_df is not None and not cached_df.empty:
                     result = (
                         pd.concat([cached_df, new_data])
