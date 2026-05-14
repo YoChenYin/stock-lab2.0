@@ -191,6 +191,8 @@ def run_unified_scan(stock_map_items, prefetched: dict | None = None) -> list:
                 continue
             if len(yoy_3m) >= 2 and yoy_3m[-1] < 0 and yoy_3m[-2] < 0:
                 continue
+            if f_streak < 0 and it_streak < 0:
+                continue
 
             tags = []
             if rev_consec and conc_accel:

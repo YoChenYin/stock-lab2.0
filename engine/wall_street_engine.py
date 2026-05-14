@@ -88,6 +88,8 @@ class WallStreetEngine:
 
         except Exception as e:
             print(f"[API Error] {sid} / {data_type}: {e}")
+            if cached_df is not None and not cached_df.empty:
+                self.cache.touch(sid, data_type)  # prevent parallel re-fetch storm same day
             return cached_df if cached_df is not None else pd.DataFrame()
 
     # ─────────────────────────────────────────────────────

@@ -55,6 +55,10 @@ def run(tickers: list[str] | None = None, force: bool = False):
     # Step 2: 預計算 scan（cache 已暖，直接從 SQLite 讀，不打 API）
     _precompute_scans(targets)
 
+    cache = DataCacheManager()
+    cache.set_tw_last_updated()
+    print("[tw_prefetch] 完成，已更新 last_updated 時間戳")
+
 
 def _precompute_scans(targets: list[str]):
     """用已暖的 cache 計算三種 scan，結果存入 tw_scan_cache。"""

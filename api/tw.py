@@ -42,9 +42,8 @@ def _stock_items() -> list:
 
 @router.get("/", response_class=HTMLResponse)
 async def tw_page(request: Request):
-    from tabs.chip_radar._db import load_last_updated
     fetch_time   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    last_updated = load_last_updated()
+    last_updated = _cache.get_tw_last_updated()
     return templates.TemplateResponse("tw.html", {
         "request":      request,
         "fetch_time":   fetch_time,

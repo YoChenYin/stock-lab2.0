@@ -161,3 +161,28 @@ class DataCacheManager:
                 f"INSERT OR REPLACE INTO {_SCAN_TABLE} VALUES (?, ?, ?)",
                 (scan_type, today, json.dumps(results, ensure_ascii=False)),
             )
+
+    def set_tw_last_updated(self):
+        """Record current timestamp as Taiwan prefetch completion time."""
+        import json
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        today = datetime.date.today().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                f"INSERT OR REPLACE INTO {_SCAN_TABLE} VALUES (?, ?, ?)",
+                ("_meta", today, json.dumps({"time": now, "status": "success"}, ensure_ascii=False)),
+            )
+
+    def get_tw_last_updated(self) -> dict:
+        """Return the Taiwan prefetch completion timestamp, or {} if never run."""
+        import json
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                f"SELECT data_json FROM {_SCAN_TABLE} WHERE scan_type='_meta' ORDER BY computed_date DESC LIMIT 1"
+            ).fetchone()
+        if row:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                pass
+        return {}
