@@ -51,13 +51,18 @@ class WallStreetEngine:
         if last_updated == today and not self.force:
             return cached_df if cached_df is not None else pd.DataFrame()
 
-        # Incremental: if we have cached data, only fetch the delta since last update
+        # Incremental: fetch delta since last update.
+        # When force=True and last_updated==today, re-fetch today specifically
+        # instead of jumping to tomorrow (which would return nothing).
         fetch_kwargs = dict(kwargs)
         if last_updated:
-            next_day = (
-                datetime.date.fromisoformat(last_updated) + datetime.timedelta(days=1)
-            ).isoformat()
-            fetch_kwargs["start_date"] = next_day
+            if self.force and last_updated == today:
+                fetch_kwargs["start_date"] = today
+            else:
+                next_day = (
+                    datetime.date.fromisoformat(last_updated) + datetime.timedelta(days=1)
+                ).isoformat()
+                fetch_kwargs["start_date"] = next_day
 
         time.sleep(0.2)
         try:
