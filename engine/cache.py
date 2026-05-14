@@ -102,7 +102,7 @@ class DataCacheManager:
                 df["date"] = pd.to_datetime(df["date"])
             return df, row[1]
         except Exception:
-            return None, None
+            return None, row[1]  # sentinel row: blob empty/corrupt, but preserve last_updated
 
     def set(self, sid: str, data_type: str, df: pd.DataFrame):
         """Write DataFrame with today as last_updated."""
@@ -117,9 +117,13 @@ class DataCacheManager:
             )
 
     def touch(self, sid: str, data_type: str):
-        """Mark entry as up-to-date today without rewriting content (no new data day)."""
+        """Mark entry as checked today. Creates a sentinel row if none exists."""
         today = datetime.date.today().isoformat()
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO api_cache (sid, data_type, last_updated, content) VALUES (?, ?, ?, x'')",
+                (sid, data_type, today),
+            )
             conn.execute(
                 "UPDATE api_cache SET last_updated=? WHERE sid=? AND data_type=?",
                 (today, sid, data_type),
